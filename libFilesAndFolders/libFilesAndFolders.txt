@@ -1,0 +1,874 @@
+--> Declarations
+
+constant kMaxFilenameLength = 255
+
+--> Messages (engine)
+
+on libraryStack
+    if the target is not me then pass libraryStack
+end libraryStack
+
+
+on releaseStack
+    if the target is not me then pass releaseStack
+end releaseStack
+
+
+--> Names
+
+
+function fileConvertToFileSystemSafe pFileName
+    ## ORDER OF CALLS IS IMPORTANT
+    put fileConvertToFileSystemSafeForOSX(pFileName) into pFileName
+    put fileConvertToFileSystemSafeForWindows(pFileName) into pFileName
+    if pFileName is empty then put "_" into pFileName
+    return pFileName
+end fileConvertToFileSystemSafe
+
+
+function fileConvertToFileSystemSafeForOSX pFileName
+    put _basicFileMakeSafe(pFileName) into pFileName
+    replace slash with ":" in pFileName
+    return pFileName
+end fileConvertToFileSystemSafeForOSX
+
+
+function fileConvertToFileSystemSafeForWindows pFileName
+    put _basicFileMakeSafe(pFileName) into pFileName
+    
+    ## Banish bad trailing characters
+    repeat forever
+        if the last char of pFileName is among the items of " ,." then
+            delete the last char of pFileName
+        else
+            exit repeat
+        end if
+    end repeat
+    
+    ## Curb those illegal characters
+    repeat for each char theChar in "/\?*:|" & quote & "<>"
+        replace theChar with empty in pFileName  
+    end repeat
+    
+    ## Work on the base name when looking at bad names
+    put fileExtractBaseName(pFileName) into theBaseName
+    
+    ## Don't let evil names through
+    put "CON,PRN,AUX,CLOCK$,NUL,COM0,COM1,COM2,COM3,COM4,COM5,COM6,COM7,COM8 COM9," & \
+            "LPT0,LPT1,LPT2,LPT3,LPT4,LPT5,LPT6,LPT7,LPT8,LPT9" into theBadNames
+     
+    set the wholematches to true
+    put itemoffset(theBaseName,theBadNames) into theItemNo
+    if theItemNo > 0 then
+        put "_" & item theItemNo of theBadNames into theBaseName        
+    end if
+    
+    put fileSetPathBaseNameTo(pFileName, theBaseName) into pFileName
+     
+    return pFileName
+end fileConvertToFileSystemSafeForWindows
+
+
+private function _basicFileMakeSafe pFileName
+    if pFileName is "." then put "_" into pFileName
+    else if pFileName is ".." then put "__" into pFileName
+    if the length of pFileName > kMaxFilenameLength then
+        set the itemdelimiter to "."
+        put char 1 to (kMaxFilenameLength - length(the last item of pFileName) - 1) of pFileName & "." & the last item of pFileName into pFileName
+    end if
+    return pFileName
+end _basicFileMakeSafe
+
+
+function fileIsValidBaseName pNameOfFile
+    put fileIsValidBaseNameOnOSX(pNameOfFile) into isValid
+     
+    if isValid then
+        put fileIsValidBaseNameOnWindows(pNameOfFile) into isValid
+    end if
+     
+    return isValid
+end fileIsValidBaseName
+
+
+function fileIsValidBaseNameOnOSX pNameOfFile
+    local isValid
+    
+    put _basicFileIsValidBaseName(pNameOfFile) into isValid
+    
+    if isValid then
+        put not matchtext(pNameOfFile, "[/]") into isValid
+    end if
+    
+    return isValid
+end fileIsValidBaseNameOnOSX
+
+
+-- Windows NTFS Volumes
+-- For VFAT it looks like "+" AND "[]" aren't allowed either
+function fileIsValidBaseNameOnWindows pNameOfFile
+    local isValid,theBadNames,theString
+    
+    put _basicFileIsValidBaseName(pNameOfFile) into isValid
+    
+    if isValid then
+        put not matchtext(pNameOfFile, "[/\\?*:|" & quote & "<>]") into isValid
+    end if
+    
+    if isValid then
+        put not (the last char of pNameOfFile is among the items of " ,.") into isValid
+    end if
+    
+    if isValid then
+        set the itemdelimiter to "."
+        put "CON,PRN,AUX,CLOCK$,NUL,COM0,COM1,COM2,COM3,COM4,COM5,COM6,COM7,COM8 COM9," & \
+                "LPT0,LPT1,LPT2,LPT3,LPT4,LPT5,LPT6,LPT7,LPT8,LPT9" into theBadNames
+        
+        if the number of items of pNameOfFile is 1 then put pNameOfFile into theString
+        else put item 1 to -2 of pNameOfFile into theString
+        set the itemdelimiter to comma 
+        set the wholematches to true
+        put not (theString is among the items of theBadNames) into isValid
+    end if
+    
+    return isValid
+end fileIsValidBaseNameOnWindows
+
+
+-- Using pFileName as the base, returns a unique name that does not appear in pFolder
+function fileUniqueFileNameForFolder pFileName, pFolder
+    put fileExtractName(pFileName) into theName
+    put fileExtractBaseName(pFileName) into theBaseName
+    put fileExtractExtension(pFileName) into theExt
+    put fileFilesInFolder(pFolder, false) into theExistingFiles
+    
+    set the wholematches to true
+    repeat while lineoffset(theName, theExistingFiles) > 0
+        add 1 to theCounter
+        put theBaseName && theCounter & "." & theExt into theName
+    end repeat
+    
+    return theName
+end fileUniqueFileNameForFolder
+
+
+function fileUniqueBaseFileNameForFolder pFileName, pFolder
+    put fileExtractBaseName(pFileName) into theBaseName
+    put theBaseName into theName
+    put fileExtractExtension(pFileName) into theExt
+    put fileFilesInFolder(pFolder, false) into theExistingFiles
+    
+    ## Create list of files without extensions
+    set the itemdelimiter to "."
+    repeat for each line theFile in theExistingFiles
+        if the number of items of theFile > 1 then
+            put item 1 to -2 of theFile & cr after theFiles
+        else
+            put theFile & cr after theFiles
+        end if
+    end repeat
+    delete the last char of theFiles
+     
+    set the wholematches to true
+    repeat while lineoffset(theName, theFiles) > 0
+        add 1 to theCounter
+        put theBaseName && theCounter into theName
+    end repeat
+     
+    if theExt is not empty then
+        put fileAddPathExtension(theName, theExt) into theName
+    end if
+    return theName
+end fileUniqueBaseFileNameForFolder
+
+
+private function _basicFileIsValidBaseName pString
+    local isValid
+    
+    put pString is not "." and pString is not ".." into isValid
+    
+    if isValid then
+        ## HFS+ AND NTFS
+        put length(pString) <= kMaxFilenameLength into isValid
+    end if
+    
+    return isValid
+end _basicFileIsValidBaseName
+ 
+ 
+--> Paths
+ 
+ 
+-- base name and extension
+function fileExtractName pFilePath
+    set the itemdelimiter to slash
+    return the last item of pFilePath
+end fileExtractName
+
+
+-- base name but no extension
+function fileExtractBaseName pFilePath
+    set the itemdelimiter to slash
+    put the last item of pFilePath into theName
+    set the itemdelimiter to "."
+    if the number of items of theName > 1 then
+        return item 1 to -2 of theName
+    else
+        return theName
+    end if
+end fileExtractBaseName
+
+
+-- directory file is in
+function fileExtractDirectory pFilePath
+    set the itemdelimiter to slash
+    return item 1 to -2 of pFilePath
+end fileExtractDirectory
+
+
+-- file extension
+function fileExtractExtension pFilePath
+    set the itemdelimiter to slash
+    put the last item of pFilePath into theName
+    set the itemdelimiter to "."
+    if the number of items of theName > 1 then
+        return the last item of theName
+    else
+        return empty
+    end if
+end fileExtractExtension
+
+
+## Modifies current extension to be pExtension. Adds if no extension
+## exists
+function fileSetPathExtensionTo pFilePath, pExtension
+    set the itemdelimiter to slash
+    put the last item of pFilePath into theName
+    set the itemdelimiter to "."
+    if the number of items of theName > 1 then
+        put pExtension into the last item of theName
+    else
+        put "." & pExtension after theName
+    end if
+    set the itemdelimiter to slash
+    put theName into the last item of pFilePath
+    return pFilePath
+end fileSetPathExtensionTo
+
+
+## Adds pExtension to pFilePath. Does not check if extension currently exists.
+function fileAddPathExtension pFilePath, pExtension
+    set the itemdelimiter to slash
+    put the last item of pFilePath into theName
+    put "." & pExtension after theName
+    set the itemdelimiter to slash
+    put theName into the last item of pFilePath
+    return pFilePath
+end fileAddPathExtension
+
+
+function fileSetPathNameTo pFilePath, pName
+    set the itemdelimiter to slash
+    put pName into the last item of pFilePath
+    return pFilePath
+end fileSetPathNameTo
+
+
+function fileSetPathDirectoryTo pFilePath, pDirectory
+    set the itemdelimiter to slash
+    put pDirectory into item 1 to -2 of pFilePath
+    return pFilePath
+end fileSetPathDirectoryTo
+
+
+function fileSetPathBaseNameTo pFilePath, pName
+    set the itemdelimiter to slash
+    put the last item of pFilePath into theName
+    set the itemdelimiter to "."
+    if the number of items of theName is 1 then
+        put pName into theName
+    else
+        put pName into item 1 to -2 of theName
+    end if
+    set the itemdelimiter to slash
+    put theName into the last item of pFilePath
+    return pFilePath
+end fileSetPathBaseNameTo
+
+
+function fileConvertRevPathToNative pPath
+    if "Win" is in the platform then
+        replace slash with backslash in pPath
+    end if
+    return pPath
+end fileConvertRevPathToNative
+
+
+function fileConvertNativePathToRev pPath
+    if "Win" is in the platform then
+        replace backslash with slash in pPath
+    end if
+    return pPath
+end fileConvertNativePathToRev
+
+
+--> File System
+
+-- Use pOverWriteExistingFolders to ensure that folders being written only contain files included in pControl
+-- Otherwise this acts more like a merge
+-- NOTE: pOverWriteExistingFolders not working yet. Need to delete folders in proper order or we screw things up
+command fileSaveFileSystemControlToFolder pControl, pFolder, pPerms, pOverWriteExistingFolders
+    local theError,theFileType,theKey
+    
+    if pPerms is empty then put "user" into pPerms
+    if the last char of pFolder is slash then delete the last char of pFolder
+    
+    if pOverWriteExistingFolders then
+        set the itemdelimiter to slash
+        put the customKeys["uFolderFolders"] of pControl into theFolders
+        repeat for each line theFolder in theFolders
+            -- /Folder # 2 items
+            -- /Folder/subfolder # 3 items
+            if the number of items of theFolder is 2 then
+                revDeleteFolder pFolder & theFolder
+            end if
+        end repeat
+    end if
+    
+    put the filetype into theFileType
+    set the filetype to empty
+    
+    --> CREATE ALL FOLDERS
+    if theError is empty then
+        repeat for each line theKey in customkeys["uFolderFolders"] of pControl             
+            fileCreateAllFoldersInPath pFolder & theKey, pFolder, pPerms
+            if the result is not empty then
+                put "error creating folder structure (" & the result & ")" into theError
+                exit repeat
+            end if
+        end REPEAT
+    end if
+    
+    --> EXPORT FILES
+    if theError is empty then
+        repeat for each line theKey in customkeys["uFolderFiles"] of pControl
+            put decompress(the uFolderFiles[theKey] of pControl) into URL ("binfile:"& pFolder & theKey)
+            if the result is not empty then
+                put "error creating file" && quote & pFolder & theKey & quote && "(" & the result & ")" into theError
+                exit repeat
+            end if
+        end REPEAT
+    end if
+     
+    set the filetype to theFileType
+     
+    return theError
+end fileSaveFileSystemControlToFolder
+
+
+command fileSaveFolderToFileSystemControl pControl, pRootFolder, p_TargetFolder
+    local theCharNo,theDefaultFolder,theError,theFile
+    local theFiles,theFolder,theFolders,thePath
+    
+    if p_TargetFolder is empty then
+        put pRootFolder into p_TargetFolder
+        ## reset object
+        set the customProperties["uFolderFiles"] of pControl to empty
+        set the customProperties["uFolderFolders"] of pControl to empty
+    end if
+     
+    if there is a folder p_TargetFolder then
+        put defaultfolder into theDefaultFolder
+        set defaultfolder to p_TargetFolder
+         
+        put the files into theFiles
+        replace slash with ":" in theFiles # Rev returns ":" as "/" on OS X (2.9 dp-4)
+        filter theFiles without ".*"
+         
+        repeat for each line theFile in theFiles
+            put p_TargetFolder & slash & theFile into thePath
+            put offset(pRootFolder, thePath) into theCharNo
+            if theCharNo is 1 then
+                delete char 1 to length(pRootFolder) of thePath
+            else
+                put "folder is not within root folder (" && p_TargetFolder & slash & theFile & ")" into theError
+            end if
+            
+            if theError is empty then
+                set the uFolderFiles[thePath] of pControl to compress(URL ("binfile:"& p_TargetFolder & slash & theFile))
+            end if
+            
+            if theError is not empty then 
+                exit repeat
+            end if
+        end REPEAT
+         
+        put the folders into theFolders
+        replace slash with ":" in theFolders # Rev returns ":" as "/" on OS X (2.9 dp-4)
+        filter theFolders without ".*"
+         
+        repeat for each line theFolder in theFolders                
+            put p_TargetFolder & slash & theFolder into thePath
+            put offset(pRootFolder, thePath) into theCharNo
+            if theCharNo is 1 then
+                delete char 1 to length(pRootFolder) of thePath
+            else
+                put "folder is not within root folder (" && p_TargetFolder & slash & theFolder & ")" into theError
+            end if
+            
+            if theError is empty then
+                set the uFolderFolders[thePath] of pControl to 1 ## a list of all folder names
+                fileSaveFolderToFileSystemControl pControl, pRootFolder, p_TargetFolder & slash & theFolder
+                put the result into theError
+            end if
+            
+            if theError is not empty then 
+                exit repeat
+            end if
+        end REPEAT
+    end if
+    
+    return theError
+end fileSaveFolderToFileSystemControl
+
+
+command fileCopyFolder pSrcFolder, pDestFolder
+    local theError,theLastItemofSrcFolder,theResult
+    
+    if the platform is "MacOS" then
+        if there is a directory pDestFolder then
+            set the itemdel to "/"
+            if char -1 of pDestFolder is "/" then delete char -1 of pDestFolder
+            put item -1 of pSrcFolder into theLastItemofSrcFolder
+            put "/" & theLastItemofSrcFolder after pDestFolder
+            create directory pDestFolder
+        end if
+         
+        put _escapeForShell(pSrcFolder) into pSrcFolder
+        put _escapeForShell(pDestFolder) into pDestFolder
+        put shell ("ditto -rsrcFork" && pSrcFolder && pDestFolder) into theResult
+         
+    else if the platform is "Win32" then
+        if there is a directory pDestFolder then
+            set the itemdel to "/"
+            if char -1 of pDestFolder is "/" then delete char -1 of pDestFolder
+            put item -1 of pSrcFolder into theLastItemofSrcFolder
+            put "/" & theLastItemofSrcFolder after pDestFolder
+            create directory pDestFolder
+        end if
+         
+        put _escapeForShell(pSrcFolder) into pSrcFolder
+        put _escapeForShell(pDestFolder) into pDestFolder
+        
+        if word 1 of the systemversion is "NT" and word 2 of the systemversion >= 6.0 then
+            ## VISTA INTRODUCED ROBOCOPY. XCOPY WAS FAILING WITH COPIES TO PARALLELS NETWORK SHARE
+            put shell ("robocopy" && pSrcFolder && pDestFolder && "/E /NFL /NDL /NS /NC /NJH /NJS") into theResult
+        else
+            put shell ("xcopy" && pSrcFolder && pDestFolder && "/Y /V /I /E") into theResult
+        end if
+    else
+        put _escapeForShell(pSrcFolder) into pSrcFolder
+        put _escapeForShell(pDestFolder) into pDestFolder
+        put shell ("cp -rf" && pSrcFolder && pDestFolder) into theResult
+    end if
+    
+    if the result is not empty then
+        put line 1 of theResult into theError
+    end if
+     
+    return theError
+end fileCopyFolder
+
+
+on fileCopyFile pSrcFile, pDestFile
+    local theShellError,theTouchResult
+    local theError,theResult
+    
+    if the platform is "MacOS" then
+        put _escapeForShell(pSrcFile) into pSrcFile
+        put _escapeForShell(pDestFile) into pDestFile
+        put shell ("ditto -rsrcFork" && pSrcFile && pDestFile) into theResult
+        put the result into theShellError
+        if theShellError is empty then
+            ## Copying to USB (10.5.2) wouldn't return file mod time when queried with detailed files
+            ## This fixes it
+            put shell ("touch -c -a" && pDestFile) into theTouchResult
+        end if
+    else if the platform is "Win32" then
+        put _escapeForShell(pSrcFile) into pSrcFile
+        put _escapeForShell(pDestFile) into pDestFile
+        put shell ("copy /Y /V" && pSrcFile && pDestFile) into theResult ## dies on long filenames
+        put the result into theShellError
+        -- put shell ("xcopy" && pSrcFile && pDestFile && "/Y /V /E") into theResult
+    else
+        put _escapeForShell(pSrcFile) into pSrcFile
+        put _escapeForShell(pDestFile) into pDestFile
+        put shell ("cp -f" && pSrcFile && pDestFile) into theResult
+        put the result into theShellError
+    end if
+    
+    if theShellError is not empty then
+        put line 1 of theResult into theError
+    end if
+    
+    return theError
+end fileCopyFile
+
+
+on fileMoveFile pSrcFile, pDestFile
+    local theError,theResult
+    
+    if the platform is "MacOS" then
+        put _escapeForShell(pSrcFile) into pSrcFile
+        put _escapeForShell(pDestFile) into pDestFile
+        put shell ("mv -f" && pSrcFile && pDestFile) into theResult
+        
+    else if the platform is "Win32" then
+        put _escapeForShell(pSrcFile) into pSrcFile
+        put _escapeForShell(pDestFile) into pDestFile
+        put shell ("move /Y" && pSrcFile && pDestFile) into theResult
+        
+    else -- linux
+        put _escapeForShell(pSrcFile) into pSrcFile
+        put _escapeForShell(pDestFile) into pDestFile
+        put shell ("mv -f" && pSrcFile && pDestFile) into theResult
+    end if
+    
+    if the result is not empty then
+        put line 1 of theResult into theError
+    end if
+    
+    return theError
+end fileMoveFile
+
+
+function fileFilesInFolder pFolder, pFullPath
+    local theDefault,theFile,theFiles,theFullFiles
+    
+    if there is not a folder pFolder then return empty
+    if last char of pFolder is not slash then put slash after pFolder
+    
+    put the defaultfolder into theDefault
+    set the defaultfolder to pFolder
+    put the files into theFiles
+    set the defaultfolder to theDefault
+    replace slash with ":" in theFiles ## bug on OS X where ":" is reported as "/"
+    filter theFiles without ".*"
+    
+    if pFullPath then
+        repeat for each line theFile in theFiles
+            put pFolder & theFile &cr after theFullFiles
+        end REPEAT
+        delete last char of theFullFiles
+        return theFullFiles
+    else
+        return theFiles
+    end if
+end fileFilesInFolder
+
+
+function fileFoldersInFolder pFolder, pFullPath
+    local theDefault,theFolders,theFullFolders,theFolder
+    
+    if there is not a folder pFolder then return empty
+    if last char of pFolder is not slash then put slash after pFolder
+    
+    put the defaultfolder into theDefault
+    set the defaultfolder to pFolder
+    put the folders into theFolders
+    set the defaultfolder to theDefault
+    replace slash with ":" in theFolders ## bug on OS X where ":" is reported as "/"
+    filter theFolders without ".*"
+    
+    if pFullPath then
+        repeat for each line theFolder in theFolders
+            put pFolder & theFolder &cr after theFullFolders
+        end REPEAT
+        delete last char of theFullFolders
+        return theFullFolders
+    else
+        return theFolders
+    end if
+end fileFoldersInFolder
+
+
+function fileGetInfo pPath
+    local isAFile,theDates,theDefaultFolder,theDetailedInfo
+    local theDetailedList,theFileA,theItemNo,theLineNo
+    local theName,theSecs
+    
+    put there is a file pPath into isAFile
+     
+    set the itemdelimiter to slash
+    put urlencode(the last item of pPath) into theName
+    delete the last item of pPath
+     
+    put the defaultfolder into theDefaultFolder
+    set the defaultfolder to pPath
+     
+    if isAFile then then
+        put the detailed files into theDetailedList
+    else
+        put the detailed folders into theDetailedList
+    end if
+    set the defaultfolder to theDefaultFolder
+    set the itemdelimiter to comma
+    replace "%2F" with "%3A" in theDetailedList ## Rev returns ":" as "/" in OS X (2.9 dp-4)
+    
+    put lineoffset(cr & theName & comma, cr & theDetailedList) into theLineNo
+    put line theLineNo of theDetailedList into theDetailedInfo
+    replace comma with tab in theDetailedInfo
+     
+    set the itemdelimiter to tab
+    put theDetailedInfo into theFileA["full"]
+    put urldecode(item 1 of theDetailedInfo) into theFileA["name"]
+    put (item 2 of theDetailedInfo) into theFileA["data size"]
+    put (item 3 of theDetailedInfo) into theFileA["resource size"]
+    put (item 2 of theDetailedInfo) + (item 3 of theDetailedInfo) into theFileA["size"]
+    -- put "creation date,modification date,last accessed date,last backup date" into theDates
+    -- replace comma with tab in theDates
+    -- repeat with theItemNo = 4 to 7
+    -- put item theItemNo of theDetailedInfo into theSecs
+    -- if theSecs is not empty then convert theSecs to short date and time
+    -- put theSecs into theFileA[(item theItemNo-3 of theDates)]
+    -- end REPEAT
+    put (item 4 of theDetailedInfo) into theFileA["creation date"]
+    put (item 5 of theDetailedInfo) into theFileA["modification date"]
+    put (item 6 of theDetailedInfo) into theFileA["last accessed date"]
+    put (item 7 of theDetailedInfo) into theFileA["last backup date"]
+    put (item 8 of theDetailedInfo) into theFileA["owner id"]
+    put (item 9 of theDetailedInfo) into theFileA["group id"]
+    put (item 10 of theDetailedInfo) into theFileA["permissions"]
+    put (item 11 of theDetailedInfo) into theFileA["creator type"]
+     
+    return theFileA
+end fileGetInfo
+
+
+on fileRevealFolder pPath
+    local theError,theRestore,theResult
+    
+    put the hideconsolewindows into theRestore
+    set the hideconsolewindows to true
+    
+    switch the platform
+        case "Win32"
+            put _escapeForShell(pPath) into pPath
+            delete char 1 of pPath ## no quotes
+            delete char -1 of pPath
+            put format("Set App = CreateObject(\"WScript.Shell\")\r\n" & \
+                    "App.Run \"%s\\Explorer.exe /root,%s\", 1, False", $SystemRoot, pPath) into theCommand
+            do theCommand as "vbscript"
+            if the result is not empty then
+                put line 1 of the result into theError
+            end if
+            break
+        case "MacOS"
+            put shell("open"&& _escapeForShell(pPath)) into theResult
+            if the result is not empty then
+                put line 1 of theResult into theError
+            end if
+            break
+    end SWITCH
+    
+    if the result is not empty then
+        put line 1 of theResult into theError
+    end if
+    
+    set the hideconsolewindows to theRestore
+    
+    return theError
+end fileRevealFolder
+
+
+on fileRevealFile pPath
+    local theError,theFolder,theRestore,theResult
+    local theScript
+    
+    put the hideconsolewindows into theRestore
+    set the hideconsolewindows to true
+    
+    switch the platform
+        case "Win32"
+            put _escapeForShell(pPath) into pPath
+            delete char 1 of pPath ## no quotes
+            delete char -1 of pPath
+            put format("Set App = CreateObject(\"WScript.Shell\")\r\n" & \
+                    "App.Run \"%s\\Explorer.exe /select,%s\", 1, False", $SystemRoot, pPath) into theCommand
+            do theCommand as "vbscript"
+            if the result is not empty then
+                put line 1 of the result into theError
+            end if
+            break
+        case "MacOS"
+            replace quote with backslash & quote in pPath
+            put fileExtractDirectory(pPath) into theFolder
+            fileRevealFolder theFolder ## FILE WILL ALWAYS BE SELECTED IF FOLDER IS SHOWING FIRST
+            put "tell application " & quote & "Finder" & quote & cr & \
+                    "reveal { item" && quote & revMacFromUnixPath(pPath) & quote && "}" & cr & \
+                    "activate" & cr & \
+                    "end tell" into theScript
+            do theScript as AppleScript
+            put the result into theError
+            if word 1 to 2 of theError is "document file" then put empty into theError
+            break
+    end SWITCH
+    
+    set the hideconsolewindows to theRestore
+    
+    return theError
+end fileRevealFile
+ 
+ 
+--> all handlers
+ 
+command fileCreateAllFoldersInPath pPath, pRootPath, pPerms
+    local theError,thePathSegment
+    
+    if pPerms is not "shared" then put "user" into pPerms
+    set the itemdelimiter to slash
+    
+    if pPath is empty or the number of items of pPath is 1 then
+        put "cannot create folder (invalid path)" into theError
+    end if
+     
+    ## VALIDATE pRootPath
+    if theError is empty then
+        if pRootPath is empty then
+            put item 1 to 2 of pPath into pRootPath ## "/NODE"
+        end if
+        
+        if theError is empty then
+            if last char of pRootPath is not slash then put slash after pRootPath ## Makes it easier to deal with "/" path
+            -- if the number of chars of pRootPath > 1 then ## Don't erase if path is "/"
+            -- if last char of pRootPath is slash then delete last char of pRootPath
+            -- end if
+            
+            if there is not a folder pRootPath then
+                put "root path does not exist" into theError
+            end if
+        end if
+    end if
+     
+    ## VALIDATE ANCESTORY OF PATH
+    if theError is empty then
+        put char 1 to -2 of pRootPath into theCheck ## -2 gets rid of trailing slash
+        if char 1 to (number of chars of theCheck) of pPath is not theCheck then 
+            put "path is not a child of root path" into theError
+        end if
+    end if
+     
+    ## CREATE FOLDERS
+    if theError is empty then
+        if number of items of pPath > number of items of pRootPath then
+            -- put pRootPath & slash & item (number of items of pRootPath + 1) of pPath into thePathSegment
+            put pRootPath & item (number of items of pRootPath + 1) of pPath into thePathSegment
+             
+            if there is not a folder thePathSegment then
+                create folder thePathSegment
+                if the result is not empty then
+                    put "error creating folder (" & the result & ")" into theError
+                else
+                    if pPerms is "shared" then
+                        fileSetPermissions thePathSegment, "execute", "execute", "execute"
+                        if the result is not empty then
+                            put format("error setting permissions for folder \"%s\" (%s)", thePathSegment, line 1 of the result) into theError 
+                        end if
+                    end if
+                end if
+            end if
+             
+            if theError is empty then
+                fileCreateAllFoldersInPath pPath, thePathSegment, pPerms
+                put the result into theError
+            end if
+        end if
+    end if
+     
+    return theError
+end fileCreateAllFoldersInPath
+
+
+on fileSetPermissions pFile, pOwner, pGroup, pAll
+    local theError,theResult
+    
+    put _escapeForShell(pFile) into pFile
+    
+    switch the platform
+        case "Win32"
+            /*
+            Displays or changes file attributes.
+            ATTRIB [+R | -R] [+A | -A] [+S | -S] [+H | -H] [[drive:][path]filename]  [/S] [/D]
+             
+            + Sets an attribute.
+            - Clears an attribute.
+            R Read-only file attribute.
+            A Archive file attribute.
+            S system file attribute.
+            H Hidden file attribute.
+            /S Processes files in all directories in the specified path.
+            /D Processes folders as well
+            */
+             
+            switch pOwner
+                case "read"
+                    put "+r" into pOwner
+                    break
+                case "write"
+                    put "-r" into pOwner
+                    break
+            end switch
+            put shell (format ("attrib %s %s", pOwner, pFile) ) into theResult
+            break
+            
+        case "MacOS"
+            put _executableBitFromType(pOwner) into pOwner
+            put _executableBitFromType(pGroup) into pGroup
+            put _executableBitFromType(pAll) into pAll             
+            put shell(format("chmod %u%u%u %s ", pOwner, pGroup, pAll, pFile)) into theResult
+            break
+    end SWITCH
+    
+    if the result is not empty then
+        put line 1 of theResult into theError
+    end if
+    
+    return theError
+end fileSetPermissions
+
+
+--> Private
+
+private function _escapeForShell pStr
+    local theChar,theSpecialChars
+    
+    if the platform contains "MacOS" then
+        put "\" & space & quote & "'`<>!;()[]?#$^&*=|" into theSpecialChars
+        repeat for each char theChar in theSpecialChars
+            replace theChar with ("\" & theChar) in pStr
+        end REPEAT
+    else
+        replace "/" with "\" in pStr
+        put quote & pStr & quote into pStr
+    end if
+    
+    return pStr
+end _escapeForShell
+
+
+private function _executableBitFromType pType
+    switch pType
+        case "execute"
+            put 7 into pType
+            break
+        case "write"
+            put 6 into pType
+            break
+        case "read"
+            put 5 into pType
+            break
+        default
+            put 0 into pType
+    end switch
+    return pType
+end _executableBitFromType

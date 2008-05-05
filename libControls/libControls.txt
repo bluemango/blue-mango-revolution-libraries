@@ -1,0 +1,1365 @@
+--> Messages (Engine)
+
+
+on libraryStack
+    if the target is not me then pass libraryStack
+    
+end libraryStack
+
+
+on releaseStack
+    if the target is not me then pass releaseStack
+    
+end releaseStack
+
+--> Toolbars
+
+function ToolbarButtonImageCenter pButton
+    put the bottommargin of pButton into theMargin
+    put the effective textheight of pButton into theTextHeight
+    put the effective textsize of pButton into theTextSize
+    put theTextHeight - theTextSize - theMargin into theMargin
+    put the formattedheight of pButton into theIconHeight
+    put the bottom of pButton into theBottom
+    put item 1 of the loc of pButton into item 1 of theLoc
+    put theBottom + theMargin - theTextHeight - round(theIconHeight / 2) into item 2 of theLoc
+    return theLoc
+end ToolbarButtonImageCenter
+
+--> Images
+
+command CreateFieldAlternatingColors pDestImg, pColor1, pColor2, pRowHeight, pWidth
+    local pixelCharLength = 4
+    
+    if pRowHeight is empty then put 18 into pRowHeight
+    if pWidth is empty then put 500 into pWidth
+    
+    split pColor1 by comma
+    split pColor2 by comma
+    
+    put numtochar(0) after theColor1Pixel	# build 1 pixel
+    put numtochar(pColor1[1]) after theColor1Pixel
+    put numtochar(pColor1[2]) after theColor1Pixel
+    put numtochar(pColor1[3]) after theColor1Pixel
+    
+    put numtochar(0) after theColor2Pixel
+    put numtochar(pColor2[1]) after theColor2Pixel
+    put numtochar(pColor2[2]) after theColor2Pixel
+    put numtochar(pColor2[3]) after theColor2Pixel
+    
+    repeat with thePixel = 1 to pWidth	# build 1 complete row of using pixel
+        put theColor1Pixel after theColor1RowImgData
+        put theColor2Pixel after theColor2RowImgData
+    end REPEAT
+    
+    repeat with theRow = 1 to pRowHeight	# build each colors row
+        put theColor1RowImgData after theColor1Row
+        put theColor2RowImgData after theColor2Row
+    end REPEAT
+    
+    put the rect of pDestImg into theRect
+    put item 1 of theRect + pWidth into item 3 of theRect
+    put item 2 of theRect + pRowHeight * 2 into item 4 of theRect
+    
+    lock screen
+    set the rect of pDestImg to theRect
+    set the imagedata of pDestImg to theColor1Row & theColor2Row
+    unlock screen
+end CreateFieldAlternatingColors
+
+
+--> Fields
+
+
+command FormatCardControlsForPlatform pCard
+    local i,theButtonTopMargin,theControl,theFieldTopMargin
+    
+    if pCard is empty then
+        put the long id of this card into pCard
+    end if
+    
+    ## Note: empty textfont means we handle formatting.
+    ## textfont means there are custom settings so don't mess with besides
+    ## setting to effective font
+    repeat with i = 1 to the number of fields of pCard
+        put the long id of field i of pCard into theControl
+        _FormatControlForPlatform theControl
+    end repeat
+     
+    repeat with i = 1 to the number of buttons of pCard
+        put the long id of button i of pCard into theControl
+        _FormatControlForPlatform theControl
+    end repeat
+    
+    repeat with i = 1 to the number of groups of pCard
+        put the long id of group i of pCard into theControl
+        _FormatControlForPlatform theControl
+    end repeat
+end FormatCardControlsForPlatform
+
+
+command FormatControlForPlatform pControl
+    _FormatControlForPlatform pControl
+end FormatControlForPlatform
+
+
+private command _FormatControlForPlatform pControl
+    put item 2 of FieldMargins() into theFieldTopMargin
+    put item 2 of ButtonMargins() into theButtonTopMargin
+    put item 2 of MenuMargins() into theMenuTopMargin
+    
+    ## menu style OS X: 4, Windows : 5
+    
+    switch word 1 of pControl 
+        case "field"
+            ## Editable fields get readjusted
+            ## Label fields ("lbl" prefix) get readjusted
+            ## Label fields...
+            if the textfont of pControl is not empty then
+                resetTextPropsOnControl pControl
+            else
+                if char 1 to 3 of the short name of pControl is "lbl" then
+                    set the topmargin of pControl to theFieldTopMargin
+                    resetTextPropsOnControl pControl
+                    ResizeLabelFieldtoFit pControl
+                else -- if not the locktext of pControl or pForceMargins then
+                    ## Can't see why we wouldn't want to set topmargin of all fields
+                    set the topmargin of pControl to theFieldTopMargin
+                    resetTextPropsOnControl pControl
+                    -- else
+                    -- set the topmargin of pControl to theFieldTopMargin
+                    -- resetTextPropsOnControl pControl
+                end if
+            end if
+            break
+        case "button"
+            resetTextPropsOnControl pControl
+             
+            put the style of pControl into theStyle
+            if theStyle is among the items of "standard,radioButton,checkbox" then
+                ResizeToFitLabel pControl
+                set the topmargin of pControl to theButtonTopMargin
+            else if theStyle is "menu" then
+                if the showname of pControl then
+                    set the topmargin of pControl to theMenuTopMargin
+                end if
+            end if
+            break
+        case "group"
+            if the scrollbarwidth of pControl > 0 then
+                set the scrollbarwidth of pControl to ScrollBarWidthForPlatform()
+            end if
+            break
+        case "scrollbar"
+            if the style of pControl is "scrollbar" then
+                if the orientation of pControl is "vertical" then
+                    set the width of pControl to ScrollBarWidthForPlatform()
+                else
+                    set the height of pControl to ScrollBarWidthForPlatform()
+                end if
+            end if
+            break
+    end switch
+end _FormatControlForPlatform
+
+
+## Looks for any fields on a card that have the textfont property set
+## If it has the textfont property set then the textfont is set to the effective textfont of the card
+## Used for cross-platform projects where you have set text to bold, italic, etc. and Rev has stored
+## the font
+command FormatCardControlsUsingDefaultFont pCard
+    local i
+    
+    ## We don't touch groups since they may be used for inheritance
+    repeat with i = 1 to the number of fields of pCard
+        resetTextPropsOnControl the long id of field i of pCard
+    end REPEAT
+    
+    repeat with i = 1 to the number of buttons of pCard
+        resetTextPropsOnControl the long id of button i of pCard
+    end REPEAT
+    
+    repeat with i = 1 to the number of graphics of pCard
+        resetTextPropsOnControl the long id of graphic i of pCard
+    end REPEAT
+end FormatCardControlsUsingDefaultFont
+
+
+command FormatControlUsingDefaultFont pControl
+    resetTextPropsOnControl pControl
+end FormatControlUsingDefaultFont
+
+
+private command resetTextPropsOnControl pControl
+    local theHeight,theSize,theStyle
+    
+    if the textfont of pControl is not empty then
+        ## use this method so we can inherit fonts from groups
+        put the textstyle of pControl into theStyle
+        put the textsize of pControl into theSize
+        put the textheight of pControl into theHeight
+        set the textfont of pControl to empty
+        set the textfont of pControl to the effective textfont of pControl
+        set the textstyle of pControl to theStyle
+        set the textsize of pControl to theSize
+        set the textheight of pControl to theHeight
+    end if
+end resetTextPropsOnControl
+
+
+private function ControlCard pControl
+    local theCharNo
+    
+    if word 1 of pControl is "stack" then
+        return empty
+    else
+        if word 1 of pControl is not "card" and pControl contains " of card " then
+            put offset(" of card ", pControl) into theCharNo
+            delete char 1 to (theCharNo + 3) of pControl
+            return pControl
+        else if word 1 of pControl is "card" then
+            return pControl
+        else
+            return empty
+        end if
+    end if
+end ControlCard
+
+
+
+--> Text
+
+
+function EmptyTextColor
+    return "150,150,150"
+end EmptyTextColor
+
+
+function DisabledTextColor
+    return "105,105,105"
+end DisabledTextColor
+
+--> Layout
+
+
+function ButtonMargins
+    if the platform is "MacOS" then
+        put 8,5,8,8 into theMargins
+    else
+        put 8,7,8,8 into theMargins
+    end if
+    return theMargins
+end ButtonMargins
+
+
+function FieldMargins
+    if the platform is "MacOS" then
+        put 8,6,8,8 into theMargins
+    else
+        put 8,8,8,8 into theMargins
+    end if
+    return theMargins
+end FieldMargins
+
+
+function MenuMargins
+    if the platform is "MacOS" then
+        put 8,4,8,8 into theMargins
+    else
+        put 8,6,8,8 into theMargins
+    end if
+    return theMargins
+end MenuMargins
+
+
+function ScrollBarWidthForPlatform
+    if the platform is "MacOS" then
+        put 15 into theWidth
+    else
+        put 16 into theWidth
+    end if
+    return theWidth
+end ScrollBarWidthForPlatform
+
+
+-- pass in name of buttons
+command LayoutDialogButtons
+    put DialogWindowMargins() into theMargins
+    put SpaceBetweenButtons() into theButtonDistance
+    put the height of this stack - item 4 of theMargins into item 2 of theLoc 
+    put the width of this stack - item 3 of theMargins  into item 1 of theLoc
+     
+    switch the platform
+        case "macos"
+            repeat with i = 1 to the paramcount
+                put param(i) into theName
+                ResizeToFitLabel the long id of button theName
+                set the bottomright of button theName to theLoc 
+                put the left of button theName - theButtonDistance into item 1 of theLoc
+            end repeat
+            break
+        case "win32"
+        default
+            repeat with i = the paramcount down to 1
+                put param(i) into theName
+                ResizeToFitLabel the long id of button theName
+                set the bottomright of button theName to theLoc 
+                put the left of button theName - theButtonDistance into item 1 of theLoc
+            end repeat
+            break
+    end switch
+end LayoutDialogButtons
+
+
+command LayoutSafeAndUnsafeDialogButtons
+    local i,theButtonDistance,theMargin,theName
+    local theUnsafeDistance
+    
+    put WindowMarginForButton() into theMargin
+    put SpaceBetweenButtons() into theButtonDistance
+    put SpaceBetweenSafeAndUnsafeButtons() into theUnsafeDistance
+    put the width of this stack - theMargin  into item 1 of theLoc
+    put the height of this stack - theMargin into item 2 of theLoc 
+    
+    switch the platform
+        case "win32"
+            repeat with i = the paramcount down to 1
+                put param(i) into theName
+                if theName is not empty then
+                    set the bottomright of button theName to theLoc 
+                    put the left of button theName - theButtonDistance into item 1 of theLoc
+                end if
+            end repeat
+            break
+        case "macos"
+        default
+            repeat with i = 1 to the paramcount
+                put param(i) into theName
+                if theName is empty then
+                    put theUnsafeDistance into theUnsafeMargin
+                else
+                    subtract theUnsafeMargin from item 1 of theLoc
+                    set the bottomright of button theName to theLoc 
+                    put the left of button theName - theButtonDistance into item 1 of theLoc
+                    put 0 into theUnsafeMargin
+                end if
+            end repeat
+            break
+    end switch
+end LayoutSafeAndUnsafeDialogButtons
+
+
+-- Distance from controls from side of windows
+-- also distance from bottom of bottom-most control and the top of a 
+-- dialog button
+function WindowMargin
+    switch the platform
+        case "macos"
+            put 20 into theMargin
+            break
+        case "win32"
+            put 20 into theMargin
+            break
+    end switch
+    return theMargin
+end WindowMargin
+
+
+function DialogWindowMargins
+    switch the platform
+        case "Win32"
+            return "24,15,6,20"
+            break
+        case "MacOS"
+        default
+            return "24,15,24,20"
+    end switch
+end DialogWindowMargins
+
+
+function DialogSpaceBetweenIconAndText
+    switch the platform
+        case "MacOS"
+        default
+            return 16
+    end switch
+end DialogSpaceBetweenIconAndText
+
+
+function DialogSpaceBetweenFields
+    switch the platform
+        case "MacOS"
+        default
+            return 8
+    end switch
+end DialogSpaceBetweenFields
+
+
+function DialogSpaceBetweenFieldAndButtons
+    switch the platform
+        case "MacOS"
+        default
+            return 10
+    end switch
+end DialogSpaceBetweenFieldAndButtons
+
+
+-- how far controls are from each other
+-- i.e. a "+" button from the list field it affects
+function ControlMargin
+    switch the platform
+        case "macos"
+            put 9 into theMargin
+            break
+        case "win32"
+            put 9 into theMargin
+            break
+    end switch
+    return theMargin
+end ControlMargin
+
+
+function WindowMarginForButton
+    put WindowMargin() into theMargin
+    switch the platform
+        case "macos"
+            subtract 2 from theMargin
+            break
+        case "win32"
+            break
+    end switch
+    return theMargin
+end WindowMarginForButton
+
+
+function SpaceBetweenButtons
+    switch the platform
+        case "macos"
+            put 12 into theSpace
+            break
+        case "win32"
+            put 8 into theSpace
+            break             
+    end switch
+    return theSpace
+end SpaceBetweenButtons
+
+
+function SpaceBetweenSafeAndUnsafeButtons
+    switch the platform
+        case "win32"
+        case "linux"
+            put SpaceBetweenButtons() into theSpace
+            break
+        case "macos"
+            put 24 into theSpace
+            break
+    end switch
+    return theSpace
+end SpaceBetweenSafeAndUnsafeButtons
+
+
+function MinimumButtonWidth
+    switch the platform
+        case "windows"
+            return 73
+            break
+        case "macos"
+        default
+            return 70
+            break
+    end switch
+end MinimumButtonWidth
+
+
+function SpaceBetweenTopOfTabAndControls
+    put ControlMargin() into theControlMargin
+    switch the platform
+        case "MacOS"
+            add 30 to theControlMargin
+            break
+        case "Win32"
+        default
+            add 28 to theControlMargin
+            break
+    end switch
+    return theControlMargin
+end SpaceBetweenTopOfTabAndControls
+
+
+command ResizeToFitLabel pControl
+    -- http://developer.apple.com/documentation/UserExperience/Conceptual/OSXHIGuidelines/XHIGControls/chapter_18_section_2.html
+    switch word 1 of the long id of pControl
+        case "button"
+            lock screen
+            put the textalign of pControl into theTextAlign
+            switch theTextAlign
+                case "left"
+                    put the topleft of pControl into theLoc
+                    break
+                case "right"
+                    put the topright of pControl into theLoc
+                    break
+                default
+                    put the loc of pControl into theLoc
+            end switch
+            put the formattedwidth of pControl into theWidth
+            
+            if the style of pControl is not among the items of "checkbox,radiobutton" then
+                add 20 to theWidth ## Left/right padding
+                put max(theWidth, MinimumButtonWidth()) into theWidth
+            end if
+            
+            set the width of pControl to theWidth
+            switch theTextAlign
+                case "left"
+                    set the topleft of pControl to theLoc
+                    break
+                case "right"
+                    set the topright of pControl to theLoc
+                    break
+                default
+                    set the loc of pControl to theLoc
+            end switch
+            unlock screen
+            break
+        case "field"
+            ResizeLabelFieldtoFit pControl
+            break        
+    end switch
+end ResizeToFitLabel
+
+
+command ResizeLabelFieldtoFit pField
+    put the textalign of pField into theAlignment
+    put the rect of pField into theRect
+    put the dontwrap of pField into theDontWrap
+    set the dontwrap of pField to true
+    
+    switch theAlignment
+        case "left"
+            put item 1 of theRect + the formattedwidth of pField into item 3 of theRect
+            set the rect of pField to theRect
+            break
+        case "right"
+            put item 3 of theRect - the formattedwidth of pField into item 1 of theRect
+            set the rect of pField to theRect
+            break
+        case "center"
+            lock screen
+            put the loc of pField into theLoc 
+            set the width of pField to the formattedwidth of pField
+            set the loc of pField to theLoc
+            unlock screen
+            break
+    end switch
+    set the dontwrap of pField to theDontWrap
+end ResizeLabelFieldtoFit
+
+
+command ResizeFieldHeightToFitText pField
+    put the rect of pField into theRect
+    put item 2 of theRect + the formattedheight of pField into item 4 of theRect
+    subtract the bottommargin of pField from item 4 of theRect
+    set the rect of pField to theRect
+end ResizeFieldHeightToFitText
+
+
+command SetStackRect pStack, pRect, pEase, pDuration
+    put the rect of pStack into theRect
+    
+    if pEase is not empty then
+        _InitializeAnimationForControl pStack, "rect", pEase, pDuration, theRect, pRect
+    else
+        set the rect of pStack to pRect
+    end if
+end SetStackRect
+
+
+command SetStackWidthAndHeight pStack, pWidth, pHeight, pEase, pDuration
+    put the rect of pStack into theRect
+    
+    if pEase is not empty then
+        put theRect into theNewRect
+        put item 1 of theNewRect + pWidth into item 3 of theNewRect
+        put item 2 of theNewRect + pHeight into item 4 of theNewRect
+        _InitializeAnimationForControl pStack, "rect", pEase, pDuration, theRect, theNewRect
+    else
+        put item 1 of theRect + pWidth into item 3 of theRect
+        put item 2 of theRect + pHeight into item 4 of theRect
+        set the rect of pStack to theRect
+    end if
+end SetStackWidthAndHeight
+
+
+command SetStackHeight pStack, pHeight, pEase, pDuration
+    put the rect of pStack into theRect
+    
+    if pEase is not empty then
+        _InitializeAnimationForControl pStack, "height", pEase, pDuration, item 4 of theRect - item 2 of theRect, pHeight
+    else
+        put item 2 of theRect + pHeight into item 4 of theRect
+        set the rect of pStack to theRect
+    end if
+end SetStackHeight
+
+
+command SetStackWidth pStack, pWidth, pEase, pDuration
+    put the rect of pStack into theRect
+    
+    if pEase is not empty then
+        _InitializeAnimationForControl pStack, "width", pEase, pDuration, item 3 of theRect - item 1 of theRect, pWidth
+    else
+        put item 1 of theRect + pWidth into item 3 of theRect
+        set the rect of pStack to theRect
+    end if
+end SetStackWidth
+
+
+--> Controls
+
+
+command SetButtonWidthsToWidestInGroup pButtonNames, pAlignType
+    local theBaseLoc,theButton,theLoc,theMaxWidth
+    local theWidth
+    
+    repeat for each item theButton in pButtonNames
+        put the width of button theButton into theWidth
+        if theWidth > theMaxWidth then
+            put the loc of button theButton into theBaseLoc
+            put theWidth into theMaxWidth
+        end if
+    end repeat
+    
+    lock screen
+    
+    repeat for each item theButton in pButtonNames
+        set the width of button theButton to theMaxWidth
+        put the loc of button theButton into theLoc
+        switch pAlignType
+            case "horiztonal"
+                put item 1 of theBaseLoc into item 1 of theLoc
+                break
+            case "vertical"
+                put item 2 of theBaseLoc into item 2 of theLoc
+                break
+        end switch
+        set the loc of button theButton to theLoc
+    end repeat
+    unlock screen
+end SetButtonWidthsToWidestInGroup
+
+
+command SetMenuHistoryToMatchingLine pMenu, pFindString
+    set the wholematches to true
+    put lineoffset(pFindString, the text of pMenu) into theLineNo
+    if theLineNo > 0 then
+        set the menuhistory of pMenu to theLineNo
+        return empty
+    else
+        return "not found"
+    end if
+end SetMenuHistoryToMatchingLine
+
+command SetHilitedLineToMatchingLine pField, pFindString
+    set the wholematches to true
+    put lineoffset(pFindString, the text of pField) into theLineNo
+    if theLineNo > 0 then
+        set the hilitedline of pField to theLineNo
+        return empty
+    else
+        return "not found"
+    end if
+end SetHilitedLineToMatchingLine
+
+command SetTopMiddle pControl, pLoc
+    add the height of pControl / 2 to item 2 of pLoc
+    set the loc of pControl to pLoc
+end SetTopMiddle
+
+command SetTopLeft pControl, pLoc
+    set the topleft of pControl to pLoc
+end SetTopLeft
+
+command SetTopRight pControl, pLoc
+    set the topright of pControl to pLoc
+end SetTopRight
+
+command SetBottomRight pControl, pLoc
+    set the bottomright of pControl to pLoc
+end SetBottomRight
+
+command SetBottomLeft pControl, pLoc
+    set the bottomleft of pControl to pLoc
+end SetBottomLeft
+
+command SetLeftMiddle pControl, pLoc
+    add the width of pControl / 2 to item 1 of pLoc
+    set the loc of pControl to pLoc
+end SetLeftMiddle
+
+command SetRightMiddle pControl, pLoc
+    subtract the width of pControl / 2 from item 1 of pLoc
+    set the loc of pControl to pLoc
+end SetRightMiddle
+
+command SetBottomMiddle pControl, pLoc
+    subtract the height of pControl / 2 from item 2 of pLoc
+    set the loc of pControl to pLoc
+end SetBottomMiddle
+
+
+command SetRect pControl
+    put the rect of pControl into theRect
+    repeat with i = 1 to 4
+        put param(i+1) into theParam
+        if theParam is not empty then put theParam into item i of theRect
+    end REPEAT
+    
+    set the rect of pControl to theRect
+end SetRect
+
+
+command ResizeAroundCenter pControl, pWidth, pHeight
+    lock screen
+    put the loc of pControl into theLoc
+    if pWidth is an integer then set the width of pControl to pWidth
+    if pHeight is an integer then set the height of pControl to pHeight
+    set the loc of pControl to theLoc
+    unlock screen
+end ResizeAroundCenter
+
+
+--> Menus (Window)
+
+
+command FormatWindowMenuForPlatform pMenu
+    if pMenu is empty then
+        if the menubar of this stack is not empty then
+            put the long id of group (the menubar of this stack) of this stack into pMenu
+        end if
+    end if
+    
+    set the opaque of pMenu to true
+    
+    switch the platform
+        case "Win32"
+            ## Need to verify that these reg keys are in fact the ones to search on
+            put queryregistry("HKEY_USERS\.DEFAULT\Control Panel\Colors\MenuHilight") into theColor
+            replace space with comma in theColor
+            if theColor is a color then
+                set the hilitecolor of pMenu to theColor
+            end if
+            
+            put queryregistry("HKEY_USERS\.DEFAULT\Control Panel\Colors\MenuBar") into theColor
+            replace space with comma in theColor
+            if theColor is a color then
+                set the backgroundcolor of pMenu to theColor
+            end if
+            break
+    end switch
+end FormatWindowMenuForPlatform 
+    
+
+command SetWindowMenuText pButton, pMenuText, pRanges
+    if _ModalDialogIsOpen() then         
+        put DisableMenuItems(pMenuText, pRanges) into pMenuText
+    end if
+    
+    set the text of pButton to pMenuText
+end SetWindowMenuText
+    
+    
+private function _ModalDialogIsOpen
+    put line 1 of the openstacks into theTopStack
+    if theTopStack is empty then ## POPUPS SEEM TO RETURN EMPTY FOR OPENSTACK
+        return false
+    else
+        return the mode of stack theTopStack is 5
+    end if
+end _ModalDialogIsOpen
+
+
+-- pRanges is a cr delimited list of comma delimted lists. item 1 is the start line number, item 2 is the end line number.
+-- This allows you to specify chunks of lines to disable
+function DisableMenuItems pMenuText, pLineNumbersToExclude, pRanges
+    local theChar,theCharIndex,theLine,theLineNo
+    
+    if pRanges is empty then 
+        put 1 into item 1 of pRange
+        put the number of lines of pMenuText into item 2 of pRange
+    end if
+    
+    set the wholematches to true
+    repeat for each line theRange in pRanges
+        repeat with theLineNo = item 1 of theRange to item 2 of theRange             
+            put line theLineNo of pMenuText into theLine
+            put 0 into theCharIndex
+            repeat for each char theChar in theLine
+                add 1 to theCharIndex
+                 
+                if theChar is "(" or theChar is "-" then
+                    exit repeat
+                else if theChar is not tab then
+                    put "(" before char theCharIndex of theLine
+                    exit repeat
+                end if
+            end repeat
+            put theLine into line theLineNo of pMenuText
+        end repeat
+    end repeat
+    
+    return pMenuText
+end DisableMenuItems
+
+
+
+--> Menus
+
+command MakeLabelFit pTarget, pLabel
+    local theEndChar,theLabel,theMaxWidth,theSize
+    local x
+    
+    if pLabel is empty then put the selectedtext of pTarget into pLabel
+    
+    if the uMaxWidth of pTarget is empty then
+        if the platform is "MacOS" then
+            put the width of pTarget - 15 into theMaxWidth
+        else
+            put the width of pTarget - 18 into theMaxWidth
+        end if
+    else
+        put the uMaxWidth of pTarget into theMaxWidth
+    end if
+    
+    lock screen
+    
+    --> CHECK IF ELLIPSES TAKE UP ENTIRE BUTTON
+    set the label of pTarget to "..."
+    if the formattedwidth of pTarget < theMaxWidth then
+        set the label of pTarget to pLabel
+        put the formattedwidth of pTarget into theSize
+        if theSize > theMaxWidth then
+            put empty into theLabel
+            repeat with x = 1 to length(pLabel)
+                set the label of pTarget to (char 1 to x of pLabel) & "..."
+                if the formattedwidth of pTarget > theMaxWidth then
+                    exit REPEAT
+                else
+                    switch (the platform)
+                        case "MacOS"
+                            put x+1 into theEndChar
+                            break
+                        case "Win32"
+                            put x+2 into theEndChar
+                            break
+                        default
+                            put x into theEndChar
+                            break
+                    end SWITCH
+                    
+                    put char 1 to theEndChar of pLabel & "..." into theLabel
+                end if
+            end REPEAT
+            
+            set the label of pTarget to theLabel
+        end if
+    end if
+    
+    unlock screen
+end MakeLabelFit
+
+
+--> Groups
+
+-- returns the rect where you can draw content in a group without making scrollbars appear
+function WorkingGroupRect pGroup
+    put the rect of pGroup into theRect
+    add the leftmargin of pGroup to item 1 of theRect
+    add the topmargin of pGroup to item 2 of theRect
+    subtract the rightmargin of pGroup from item 3 of theRect
+    subtract the bottommargin of pGroup from item 4 of theRect
+    if the hscrollbar of pGroup then subtract the scrollbarwidth of pGroup from item 4 of theRect
+    if the vscrollbar of pGroup then subtract the scrollbarwidth of pGroup from item 3 of theRect
+    if the showborder of pGroup then
+        put the borderwidth of pGroup into theWidth
+        add theWidth to item 1 of theRect
+        add theWidth to item 2 of theRect
+        subtract theWidth from item 3 of theRect
+        subtract theWidth from item 4 of theRect
+    end if
+    return theRect
+end WorkingGroupRect
+
+--> Properties
+
+command DeleteCustomPropertySet pControl, pSet
+    local theLineNo,theSets
+    
+    put the custompropertysets of pControl into theSets
+    set the wholematches to true
+    put lineoffset(pSet, theSets) into theLineNo
+    if theLineNo > 0 then
+        delete line theLineNo of theSets
+        set the custompropertysets of pControl to theSets
+    end if
+end DeleteCustomPropertySet
+
+
+function StackOf pControl
+    local theCharNo
+    
+    if word 1 of pControl is not "stack" then
+        if "stack" && quote is not in pControl then put the long id of pControl into pControl
+        put offset(" of stack ", pControl) into theCharNo
+        if theCharNo > 0 then
+            delete char 1 to (theCharNo + 3) of pControl
+        else
+            put empty into pControl
+        end if
+    end if
+    return pControl
+end StackOf
+
+
+function CardOf pControl
+    local theCharNo
+    
+    if word 1 of pControl is not "card" then
+        if "card" && quote is not in pControl then put the long id of pControl into pControl
+        put offset(" of card ", pControl) into theCharNo
+        if theCharNo > 0 then
+            delete char 1 to (theCharNo + 3) of pControl
+        else
+            put empty into pControl
+        end if
+    end if
+    return pControl
+end CardOf
+
+
+function LocOfLine pField, pLine
+    put RectOfLine(pField, pLine) into theRect
+    put item 1 of theRect + round((item 3 of theRect - item 1 of theRect) / 2) into item 1 of theLoc
+    put item 2 of theRect + round((item 4 of theRect - item 2 of theRect) / 2) into item 2 of theLoc
+    return theLoc
+end LocOfLine
+
+
+function RectOfLine pField, pLine
+    put the top of pField into theTop
+    add the topmargin of pField - 4 to theTop
+    put the rect of pField into theRect
+    put the effective textheight of pField into theHeightOfEachLine
+    put theTop + ((pLine - 1) * theHeightOfEachLine) into item 2 of theRect 
+    put item 2 of theRect + theHeightOfEachLine into item 4 of theRect
+    if the vscrollbar of pField then subtract the scrollbarwidth of pField from item 3 of theRect
+    subtract the vscroll of pField from item 2 of theRect
+    subtract the vscroll of pField from item 4 of theRect
+    add 1 to item 2 of theRect ## This seems to make it all right
+    add 1 to item 4 of theRect ## This seems to make it all right
+    
+    put the borderwidth of pField into theBorderWidth
+    add theBorderWidth to item 1 of theRect
+    subtract theBorderWidth from item 3 of theRect
+    
+    subtract 1 from item 2 of theRect
+    subtract 1 from item 4 of theRect
+    
+    return theRect
+end RectOfLine
+
+
+function ScaleDimensionsToFit pWidth, pHeight, pMaxWidth, pMaxHeight, pMaxRatio, pConstrain
+    local theCurrentRatio = 0.0
+    local theNewRatio = 0.0
+    local theDimensions = "0,0"
+    
+    if pMaxWidth is not an integer or pMaxWidth < 1 then put pWidth into pMaxWidth
+    else if pMaxHeight is not an integer or pMaxHeight < 1 then put pHeight into pMaxHeight
+    
+    if pWidth <=0 or pHeight <=0 or pMaxWidth <=0 or pMaxHeight <= 0 then return pWidth & comma & pHeight
+    
+    put pHeight / pWidth into theCurrentRatio
+    put pMaxHeight / pMaxWidth into theNewRatio
+    
+    if pConstrain is not empty and pConstrain > 0 then
+        --> CALCULATE NEAREST PERCENTAGE USING pConstrain
+        --IF pConstrain = .25 THEN put (pMaxWidth / pOrigWidth) - ((pMaxWidth / pOrigWidth) mod .25) = [.25|.5|.75|1.0,...]
+        
+        if theNewRatio > theCurrentRatio then --> WIDTH IS GUIDE
+            put (pMaxWidth / pWidth) - ((pMaxWidth / pWidth) mod pConstrain) into pConstrain
+        else
+            put (pMaxHeight / pHeight) - ((pMaxHeight / pHeight) mod pConstrain) into pConstrain
+        end if
+        
+        if pMaxRatio is not empty and pMaxRatio > 0 then put min(pConstrain, pMaxRatio) into pConstrain
+         
+        put round(pWidth * pConstrain) & comma & round(pHeight * pConstrain) into theDimensions
+    else        
+        if theNewRatio > theCurrentRatio then --> WIDTH IS GUIDE
+            if pMaxRatio is not empty and pMaxRatio > 0 and pMaxWidth > (pWidth * pMaxRatio) then
+                put pWidth & comma & pHeight into theDimensions
+            else
+                put pMaxWidth & comma & round(pMaxWidth * theCurrentRatio) into theDimensions
+            end if
+        else
+            if pMaxRatio is not empty and pMaxRatio > 0 and pMaxHeight > (pHeight * pMaxRatio) then
+                put pWidth & comma & pHeight into theDimensions
+            else
+                put round(pMaxHeight / theCurrentRatio) & comma & pMaxHeight into theDimensions
+            end if
+        end if
+    end if
+    
+    return theDimensions
+end ScaleDimensionsToFit
+
+
+--> HScroll/Vscroll
+
+local sTimers
+
+
+command scrollGroupControlIntoViewIfOffScreen pGroup, pControl, pMargins, pEase, pDuration
+    put the rect of pControl into theRect
+    
+    lock screen
+    if the vscrollbar of pGroup then
+        scrollRectVerticallyIntoViewIfOffScreen pGroup, theRect, pMargins, pEase, pDuration
+    end if
+    
+    if the hscrollbar of pGroup then
+        scrollRectHorizontallyIntoViewIfOffScreen pGroup, theRect, pMargins, pEase, pDuration
+    end if
+    unlock screen
+end scrollGroupControlIntoViewIfOffScreen
+
+
+## the top is always preferred if pRect is taller than viewable area of pControl
+command scrollRectVerticallyIntoViewIfOffScreen pControl, pRect, pMargins, pEase, pDuration
+    put the rect of pControl into theMaskRect
+    if item 4 of theMaskRect - item 2 of theMaskRect < item 4 of pRect - item 2 of pRect then
+        put 2 into theItemNo
+        put item 4 of theMaskRect - item 2 of theMaskRect into theScrollToOffset
+    else
+        put 4 into theItemNo
+    end if
+     
+    if pMargins is not a rect then
+        if pMargins is an integer then
+            put pMargins,pMargins,pMargins,pMargins into pMargins
+        else
+            put 0,0,0,0 into pMargins
+        end if
+    end if
+     
+    if item 4 of pRect > item 2 of theMaskRect and item 2 of pRect < item 2 of theMaskRect then
+        ## top is clipped off
+        scrollYCoordinateToTopOfControl pControl, item 2 of pRect + the vscroll of pControl - item 2 of theMaskRect - item 2 of pMargins, pEase, pDuration
+    else if item 2 of pRect < item 4 of theMaskRect and item 4 of pRect > item 4 of theMaskRect then
+        ## bottom is clipped off
+        scrollYCoordinateToBottomOfControl pControl, item theItemNo of pRect + theScrollToOffset + the vscroll of pControl - item 2 of theMaskRect + item 4 of pMargins, \
+                pEase, pDuration
+    else if item 2 of pRect >= item 4 of theMaskRect or item 4 of pRect <= item 2 of theMaskRect then
+        ## entire rect is clipped off
+        if item 2 of pRect >= item 4 of theMaskRect then
+            scrollYCoordinateToBottomOfControl pControl, item theItemNo of pRect + theScrollToOffset + the vscroll of pControl - item 2 of theMaskRect + item 4 of pMargins, \
+                    pEase, pDuration
+        else
+            scrollYCoordinateToTopOfControl pControl, item 2 of pRect + the vscroll of pControl - item 2 of theMaskRect - item 2 of pMargins, pEase, pDuration
+        end if
+    end if
+end scrollRectVerticallyIntoViewIfOffScreen
+
+## the left is always preferred if pRect is wider than viewable are of pControl
+command scrollRectHorizontallyIntoViewIfOffScreen pControl, pRect, pMargins, pEase, pDuration
+    put the rect of pControl into theMaskRect
+    if item 3 of theMaskRect - item 1 of theMaskRect < item 3 of pRect - item 1 of pRect then
+        put 1 into theItemNo
+        put item 3 of theMaskRect - item 1 of theMaskRect into theScrollToOffset
+    else
+        put 3 into theItemNo
+    end if
+    
+    if pMargins is not a rect then
+        if pMargins is an integer then
+            put pMargins,pMargins,pMargins,pMargins into pMargins
+        else
+            put 0,0,0,0 into pMargins
+        end if
+    end if
+    
+    if item 3 of pRect > item 1 of theMaskRect and item 1 of pRect < item 1 of theMaskRect then
+        ## left is clipped off
+        scrollXCoordinateToLeftOfControl pControl, item 1 of pRect + the hscroll of pControl - item 1 of theMaskRect - item 1 of pMargins, pEase, pDuration
+    else if item 1 of pRect < item 3 of theMaskRect and item 3 of pRect > item 3 of theMaskRect then
+        ## right is clipped off
+        scrollXCoordinateToRightOfControl pControl, item theItemNo of pRect + theScrollToOffset + the hscroll of pControl - item 1 of theMaskRect + item 3 of pMargins, \
+                pEase, pDuration
+    else if item 1 of pRect >= item 3 of theMaskRect or item 3 of pRect <= item 1 of theMaskRect then
+        ## entire rect is clipped off
+        if item 1 of pRect >= item 3 of theMaskRect then
+            scrollXCoordinateToRightOfControl pControl, item theItemNo of pRect + the hscroll of pControl - item 1 of theMaskRect + item 3 of pMargins, pEase, pDuration
+        else
+            scrollXCoordinateToLeftOfControl pControl, item 1 of pRect + theScrollToOffset + the hscroll of pControl - item 1 of theMaskRect - item 1 of pMargins, \
+                    pEase, pDuration
+        end if
+    end if
+end scrollRectHorizontallyIntoViewIfOffScreen
+
+
+command scrollCoordinateToCenterOfControl pControl, pCoordinate, pEase, pDuration
+    lock screen
+    scrollXCoordinateToCenterOfControl pControl, item 1 of pCoordinate, pEase, pDuration
+    scrollYCoordinateToCenterOfControl pControl, item 2 of pCoordinate, pEase, pDuration
+    unlock screen
+end scrollCoordinateToCenterOfControl
+
+
+--> HSCroll
+
+local sAnims
+
+getprop uHScrollPercent
+    put the formattedwidth of the target - the width of the target into theWorkingWidth
+    if theWorkingWidth < 1 then
+        return 0
+    else    
+        put the hscroll of the target into thePosition
+        put thePosition / theWorkingWidth into thePercent
+        return min(1,thePercent)
+    end if
+end uHScrollPercent
+
+
+setprop uHScrollPercent pPercent
+    put the formattedwidth of the target - the width of the target into theWorkingWidth
+    put round(theWorkingWidth * pPercent) into theScroll
+    set the hscroll of the target to theScroll
+end uHScrollPercent
+
+
+command scrollXCoordinateToCenterOfControl pControl, pXCordinate, pEase
+    set the hscroll of pControl to hscrollToPutXCoordinateInCenter(pControl, pXCordinate)
+end scrollXCoordinateToCenterOfControl
+
+
+command scrollXCoordinateToLeftOfControl pControl, pXCordinate, pEase
+    set the hscroll of pControl to hscrollToPutXCoordinateAtLeft(pControl, pXCordinate)
+end scrollXCoordinateToLeftOfControl
+
+
+command scrollXCoordinateToRightOfControl pControl, pXCordinate, pEase
+    set the hscroll of pControl to hscrollToPutXCoordinateAtRight(pControl, pXCordinate)
+end scrollXCoordinateToRightOfControl
+
+
+function hscrollToPutXCoordinateInCenter pControl, pXCoordinate
+    put the width of pControl into theMaskWidth
+    put the formattedwidth of pControl into theMaxWidth
+    return max(0, min(pXCoordinate + round(theMaskWidth / 2) - theMaskWidth, theMaxWidth))
+end hscrollToPutXCoordinateInCenter
+
+
+function hscrollToPutXCoordinateAtLeft pControl, pXCoordinate
+    put the formattedwidth of pControl into theMaxWidth
+    return max(0, min(pXCoordinate, theMaxWidth))
+end hscrollToPutXCoordinateAtLeft
+
+
+function hscrollToPutXCoordinateAtRight pControl, pXCoordinate
+    put the width of pControl into theMaskWidth
+    put the formattedwidth of pControl into theMaxWidth
+    return max(0, min(pXCoordinate - theMaskWidth, theMaxWidth))
+end hscrollToPutXCoordinateAtRight
+
+
+--> VScroll
+
+
+getprop uVScrollPercent
+    put the formattedheight of the target - the height of the target into theWorkingHeight
+    if theWorkingHeight < 1 then
+        return 0
+    else    
+        put the vscroll of the target into thePosition
+        put thePosition / theWorkingHeight into thePercent
+        return min(1,thePercent)
+    end if
+end uVScrollPercent
+
+
+setprop uVScrollPercent pPercent
+    put the formattedheight of the target - the height of the target into theWorkingHeight
+    put round(theWorkingHeight * pPercent) into theScroll
+    set the vscroll of the target to theScroll
+end uVScrollPercent
+
+
+command scrollYCoordinateToCenterOfControl pControl, pYCoordinate, pEase, pDuration
+    if pEase is not empty then
+        _InitializeAnimationForControl pControl, "vscroll", pEase, pDuration, the vscroll of pControl, vscrollToPutYCoordinateInCenter(pControl, pYCoordinate)
+    else
+        set the vscroll of pControl to vscrollToPutYCoordinateInCenter(pControl, pYCoordinate)
+    end if
+end scrollYCoordinateToCenterOfControl
+
+
+command scrollYCoordinateToTopOfControl pControl, pYCoordinate, pEase, pDuration
+    if pEase is not empty then
+        _InitializeAnimationForControl pControl, "vscroll", pEase, pDuration, the vscroll of pControl, vscrollToPutYCoordinateAtTop(pControl, pYCoordinate)
+    else
+        set the vscroll of pControl to vscrollToPutYCoordinateAtTop(pControl, pYCoordinate)
+    end if
+end scrollYCoordinateToTopOfControl
+
+
+command scrollYCoordinateToBottomOfControl pControl, pYCoordinate, pEase, pDuration
+    if pEase is not empty then
+        _InitializeAnimationForControl pControl, "vscroll", pEase, pDuration, the vscroll of pControl, vscrollToPutYCoordinateAtBottom(pControl, pYCoordinate)
+    else
+        set the vscroll of pControl to vscrollToPutYCoordinateAtBottom(pControl, pYCoordinate)
+    end if
+end scrollYCoordinateToBottomOfControl
+
+
+function vscrollToPutYCoordinateInCenter pControl, pYCoordinate
+    put the height of pControl into theMaskHeight
+    put the formattedheight of pControl into theMaxHeight
+    return max(0, min(pYCoordinate + round(theMaskHeight / 2) - theMaskHeight, theMaxHeight))
+end vscrollToPutYCoordinateInCenter
+
+
+function vscrollToPutYCoordinateAtTop pControl, pYCoordinate
+    put the formattedheight of pControl into theMaxHeight
+    return max(0, min(pYCoordinate, theMaxHeight))
+end vscrollToPutYCoordinateAtTop
+
+
+function vscrollToPutYCoordinateAtBottom pControl, pYCoordinate
+    put the height of pControl into theMaskHeight
+    put the formattedheight of pControl into theMaxHeight
+    return max(0, min(pYCoordinate - theMaskHeight, theMaxHeight))
+end vscrollToPutYCoordinateAtBottom
+
+
+--> Scroll Animations
+
+
+private command _InitializeAnimationForControl pControl, pProperty, pEase, pDuration, pStartValue, pEndValue
+    put the long id of pControl into pControl
+    cancel sAnims[pControl, "send id"] ## cancel existing animation
+    
+    if pEase is not among the items of "ease in,ease out, ease in out" then put "ease out" into pEase
+    if pDuration is not an integer then put "250" into pDuration
+    
+    put pProperty into sAnims[pControl, "property"]
+    put pStartValue into sAnims[pControl, "start value"]
+    put pEndValue into sAnims[pControl, "end value"]
+    put pEase into sAnims[pControl, "ease"]
+    put pDuration into sAnims[pControl, "duration"]
+    
+    put the milliseconds into sAnims[pControl, "start time"]
+    _easeThePropertySetting pControl
+end _InitializeAnimationForControl
+
+
+command _easeThePropertySetting pControl
+    put the milliseconds - sAnims[pControl, "start time"] into theElapsedTime
+     
+    repeat with i = 1 to the number of items of sAnims[pControl, "start value"]
+        put item i of sAnims[pControl, "start value"] into theStart
+        put item i of sAnims[pControl, "end value"] into theEnd
+        
+        switch sAnims[pControl, "ease"]
+            case "ease in"
+                put round(aeEaseIn(theStart, theEnd, sAnims[pControl, "duration"], theElapsedTime, 3)) into item i of theValue
+                break
+            case "ease in out"
+            case "ease in and out"
+                put round(aeEaseInOUt(theStart, theEnd, sAnims[pControl, "duration"], theElapsedTime, 3)) into item i of theValue
+                break
+            default
+                put round(aeEaseOut(theStart, theEnd, sAnims[pControl, "duration"], theElapsedTime, 3)) into item i of theValue
+        end switch
+    end repeat
+    
+    ## check before so we know if we need to coerce values to min/max
+    if theElapsedTime >= sAnims[pControl, "duration"] then
+        put sAnims[pControl, "end value"] into theValue
+    end if
+     
+    ## set property
+    switch sAnims[pControl, "property"]
+        case "loc"
+            set the loc of pControl to theValue
+            break
+        case "left"
+            set the left of pControl to theValue
+            break
+        case "topleft"
+            set the topleft of pControl to theValue
+            break
+        case "top"
+            set the top of pControl to theValue
+            break
+        case "topright"
+            set the topright of pControl to theValue
+            break
+        case "right"
+            set the right of pControl to theValue
+            break
+        case "bottomright"
+            set the bottomright of pControl to theValue
+            break
+        case "bottom"
+            set the bottom of pControl to theValue
+            break
+        case "bottomleft"
+            set the bottomleft of pControl to theValue
+            break
+        case "vscroll"
+            set the vscroll of pControl to theValue
+            break
+        case "hscroll"
+            set the hscroll of pControl to theValue
+            break
+        case "height"
+            if word 1 of pControl is "stack" then
+                lock screen
+            end if
+            put the rect of pControl into theRect
+            put item 2 of theRect + theValue into item 4 of theRect
+            set the rect of pControl to theRect
+            if word 1 of pControl is "stack" then
+                unlock screen
+            end if
+            break
+        case "width"
+            put the rect of pControl into theRect
+            put item 1 of theRect + theValue into item 3 of theRect
+            set the rect of pControl to theRect
+            break
+        case "rect"
+            if word 1 of pControl is "stack" then
+                lock screen
+            end if
+            set the rect of pControl to theValue
+            if word 1 of pControl is "stack" then
+                unlock screen
+            end if
+            break
+    end switch
+    
+    if theElapsedTime < sAnims[pControl, "duration"] then
+        send "_easeThePropertySetting pControl" to me in 20 milliseconds
+        put the result into sAnims[pControl, "send id"]
+    else
+        put the keys of sAnims into theKeys
+        filter theKeys with pControl & ",*"
+        repeat for each line theKey in theKeys
+            delete local sAnims[theKey]
+        end repeat
+    end if
+end _easeThePropertySetting

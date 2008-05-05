@@ -1,0 +1,898 @@
+--> Locs And Rects
+
+
+function LocOfRect pRect
+    put item 1 of pRect + round((item 3 of pRect - item 1 of pRect) / 2) into item 1 of theLoc
+    put item 2 of pRect + round((item 4 of pRect - item 2 of pRect) / 2) into item 2 of theLoc
+    return theLoc
+end LocOfRect
+
+
+-- converts points for a line graphic to a rect with appropriate left,top,right,bottom values
+function LinePointsToRect pPoints
+    put min(item 1 of line 1 of pPoints, item 1 of line 2 of pPoints) into item 1 of theRect
+    put max(item 1 of line 1 of pPoints, item 1 of line 2 of pPoints) into item 3 of theRect
+    put min(item 2 of line 1 of pPoints, item 2 of line 2 of pPoints) into item 2 of theRect
+    put max(item 2 of line 1 of pPoints, item 2 of line 2 of pPoints) into item 4 of theRect
+    return theRect
+end LinePointsToRect
+
+
+--> Math
+
+function logicalTrunc pNumber
+    if pNumber is not a number then
+        return "NAN"
+    else
+        set the itemdelimiter to "."
+        put item 1 of pNumber into pNumber
+        if pNumber is not an integer then put 0 into pNumber
+        return pNumber
+    end if
+end logicalTrunc
+
+
+--> MD5
+
+function MD5Hex pValue
+    local tHex
+    
+    get binarydecode("H*", md5digest(pValue), tHex)
+    
+    return tHex
+end MD5Hex
+
+ 
+--> Number Handling
+ 
+function IsPositiveInteger pValue
+    return pValue is an integer and pValue > 0
+end IsPositiveInteger
+
+
+function IsListOfPositiveIntegers pValue
+    repeat for each item theItem in pValue
+        if not IsPositiveInteger(theItem) then
+            return false
+        end if
+    end repeat
+    return true
+end IsListOfPositiveIntegers
+
+
+function IsListOfIntegers pValue
+    repeat for each item theItem in pValue
+        if theItem is not an integer then
+            return false
+        end if
+    end repeat
+    return true
+end IsListOfIntegers
+
+
+function CoerceToNumber pValue
+    put word 1 to -1 of line 1 of pValue into pValue
+    if pValue is not a number then put 0 into pValue
+    return pValue
+end CoerceToNumber
+
+
+function CoerceToInteger pValue
+    put word 1 to -1 of line 1 of pValue into pValue
+    if pValue is not an integer then put 0 into pValue
+    return pValue
+end CoerceToInteger
+
+
+--> Lists
+
+
+function SnapNumberToNearestInList pNumber, pList
+    set the wholematches to true
+    sort pList numeric
+    
+    if pNumber < item 1 of pList then
+        put item 1 of pList into pNumber
+    else if pNumber > the last item of pList then
+        put the last item of pList into pNumber
+    else if pNumber is among the items of pList then
+        -- nothing Note: won't catch 1.0 in a list that is "1,2,4"
+    else
+        ## Sure we could split up the list and optimize but why bother...
+        repeat with i = 1 to the number of items of pList - 1
+            put item i of pList into theFloor
+            put item i + 1 of pList into theCeiling
+            if pNumber >= theFloor and pNumber <= theCeiling then
+                put abs(pNumber - theFloor) into theFloorDiff
+                put abs(pNumber - theCeiling) into theCeilingDiff
+                if theFloorDiff < theCeilingDiff then
+                    put theFloor into pNumber
+                else
+                    put theCeiling into pNumber
+                end if
+                exit repeat
+            end if
+        end repeat
+    end if
+    
+    return pNumber
+end SnapNumberToNearestInList
+
+
+function SnapNumberToNearestInRange pNumber, pStartNum, pEndNum
+    local i,theList
+    repeat with i = pStartNum to pEndNum
+        put i & comma after theList
+    end repeat
+    delete the last char of theList
+    return SnapNumberToNearestInList(pNumber, theList)
+end SnapNumberToNearestInRange
+
+
+--> Arrays
+
+
+function KeyedParametersToArray pString
+    split pString by comma and ":"
+    return pString
+end KeyedParametersToArray
+
+
+-- Returns serialized string representing array
+function SerializeArray pArray
+    repeat for each key theKey in pArray
+        put theKey & ":" & urlencode(base64encode(pArray[theKey])) & cr after theData
+    end repeat
+    delete the last char of theData
+    return theData
+end SerializeArray
+
+
+-- Returns array
+function UnserializeArray pSerializedArray
+    set the itemdelimiter to ":"
+    repeat for each line theLine in pSerializedArray
+        put item 1 of theLine into theKey
+        put base64decode(urldecode(item 2 to -1 of theLine)) into theArray[theKey]
+    end repeat
+    return theArray
+end UnserializeArray
+
+
+--> Strings
+
+function RepeatString pString, pCount
+    local tReturnVal
+    
+    if not IsPositiveInteger(pCount) then return empty
+    
+    repeat with i = 1 to pCount
+        put pString after tReturnVal
+    end REPEAT
+    
+    return tReturnVal
+end RepeatString
+
+
+function TrimWhiteSpace pString
+    local theHardSpace,theWhiteSpace
+    
+    if the platform is "MacOS" then put numtochar(202) into theHardSpace
+    else put numtochar(160) into theHardSpace
+    
+    put (space & tab & cr & linefeed & theHardSpace) into theWhiteSpace
+    repeat
+        if char 1 of pString is not in theWhiteSpace then exit REPEAT
+        else delete char 1 of pString
+    end REPEAT
+    repeat
+        if char -1 of pString is not in theWhiteSpace then exit REPEAT
+        else delete char -1 of pString
+    end REPEAT
+    
+    return pString
+end TrimWhiteSpace
+
+
+function TrimWhiteSpaceFromLeft pString
+    local theHardSpace,theWhiteSpace
+    
+    if the platform is "MacOS" then put numtochar(202) into theHardSpace
+    else put numtochar(160) into theHardSpace
+    
+    put (space & tab & cr & linefeed & theHardSpace) into theWhiteSpace
+    repeat
+        if char 1 of pString is not in theWhiteSpace then exit REPEAT
+        else delete char 1 of pString
+    end REPEAT
+    
+    return pString
+end TrimWhiteSpaceFromLeft
+
+
+function TrimWhiteSpaceFromRight pString
+    local theHardSpace,theWhiteSpace
+    
+    if the platform is "MacOS" then put numtochar(202) into tHardSpc
+    else put numtochar(160) into tHardSpc
+    
+    put (space & tab & cr & linefeed & theHardSpace) into theWhiteSpace
+    repeat
+        if char -1 of pString is not in theWhiteSpace then exit REPEAT
+        else delete char -1 of pString
+    end REPEAT
+    
+    return pString
+end TrimWhiteSpaceFromRight
+
+
+--> Menus
+
+function EncodeMenuBarText pStr
+    put EncodeMenuText(pStr) into pStr
+    replace "&" with "&&" in pStr
+    return pStr
+end EncodeMenuBarText
+
+function DecodeMenuBarText pStr
+    put DecodeMenuText(pStr) into pStr
+    replace "&&" with "&" in pStr
+end DecodeMenuBarText
+
+function EncodeMenuText pStr
+    replace slash with slash & slash in pStr
+    replace "(" with "((" in pStr
+    return pStr
+end EncodeMenuText
+
+function DecodeMenuText pStr
+    replace slash & slash with slash in pStr
+    replace "((" with "(" in pStr
+    return pStr
+end DecodeMenuText
+
+
+--> SQL
+
+
+-- function ConvertRevTimeToSQLDateTime pTime
+-- -- 2007-10-24 19:35:38
+-- ## NORMALIZE TO GMC
+-- convert pTime to seconds ## convert to GMT
+-- convert pTime to dateItems
+-- return format("%u-%u-%u %u:%u:%u", \
+        -- item 1 of pTime, item 2 of pTime, item 3 of pTime, \
+        -- item 4 of pTime, item 5 of pTime, item 6 of pTime)
+-- end ConvertRevTimeToSQLDateTime
+-- 
+-- 
+-- function ConvertSQLDateTimeToSeconds pDateTimeValue
+-- put word 1 to -1 of pDateTimeValue into pDateTimeValue
+-- replace space with cr in pDateTimeValue
+-- set the itemdelimiter to "-"
+-- put item 1 of line 1 of pDateTimeValue & comma & item 2 of line 1 of of pDateTimeValue & comma & \
+        -- item 3 of line 1 of pDateTimeValue & comma into theDateItems
+-- set the itemdelimiter to ":"
+-- put item 1 of line 2 of pDateTimeValue & comma & \
+        -- item 2 of line 2 of pDateTimeValue & comma & \
+        -- item 3 of line 2 of pDateTimeValue & comma & 0 after theDateItems
+-- convert theDateItems to seconds
+-- return theDateItems
+-- end ConvertSQLDateTimeToSeconds
+
+--> Web
+
+
+function MimeTypeFromExtension pExtension
+    local theType
+    
+    switch pExtension
+        case "bmp"
+            put "image/bmp" into theType
+            break
+        case "jpeg"
+        case "jpg"
+            put "image/jpeg" into theType
+            break
+        case "tiff"
+            put "image/tiff" into theType
+            break
+        case "gif"
+            put "image/gif" into theType
+            break
+        case "png"
+            put "image/png" into theType
+            break
+        case "mov"
+        case "qt"
+            put "video/quicktime" into theType
+            break
+        case "wmv"
+            put "video/x-ms-wmv" into theType
+            break
+        case "avi"
+            put "video/avi" into theType
+            break
+        case "m4v"
+            put "video/x-m4v" into theType
+            break
+        case "mp4"
+            put "video/mp4" into theType
+            break
+        case "mp2"
+        case "mpa"
+        case "mpe"
+        case "mpg"
+        case "mpeg"
+        case "mpv2"
+            put "video/mpeg" into theType
+            break
+        case "3gp"
+            put "video/3gpp" into theType
+            break
+        case "pdf"
+            put "application/pdf" into theType
+            break
+    end switch
+    return theType
+end MimeTypeFromExtension
+
+
+function ConvertToWebSafe pString
+    local theChar,theCode,theNewString
+    
+    put ConvertHighToLowISO(pString) into pString
+    
+    repeat for each char theChar in pString
+        put chartonum(theChar) into theCode
+        if (theCode > 44 and theCode < 58) or \
+                (theCode >64 and theCode < 91) or \
+                (theCode > 96 and theCode < 123) then
+            put theChar after theNewString
+        else
+            put "_" after theNewString
+        end if
+    end REPEAT
+    
+    return theNewString
+end ConvertToWebSafe
+
+function ConvertHighToLowISO pString
+    local theCode,theCodesA,theKey
+    
+    ## convert high ascii chars
+    set the casesensitive to true
+    
+    if the platform is "MacOS" then
+        put "128,129,174,203,204,229,231" into theCodesA["A"]
+        put "135,136,137,138,139,140,188,190" into theCodesA["a"]
+        put "130" into theCodesA["C"]
+        put "141" into theCodesA["c"]
+        put "134,242,243,244" into theCodesA["U"]
+        put "156,157,158,159,181" into theCodesA["u"]
+        put "234,235,236,237" into theCodesA["I"]
+        put "146,147,148,149" into theCodesA["i"]
+        put "131,230,232,233" into theCodesA["E"]
+        put "142,143,144,145" into theCodesA["e"]
+        put "133,175,205,206,238,239,241" into theCodesA["O"]
+        put "151,152,153,154,155,187,191,207" into theCodesA["o"]
+        put "132" into theCodesA["N"]
+        put "150" into theCodesA["n"]
+        put "196" into theCodesA["f"]
+        put "216" into theCodesA["y"]
+        put "217" into theCodesA["Y"]
+        put "167" into theCodesA["B"]
+    else
+        put "142,143,146" into theCodesA["A"]
+        put "131,132,133,134,145,160" into theCodesA["a"]
+        put "128" into theCodesA["C"]
+        put "135" into theCodesA["c"]
+        put "154" into theCodesA["U"]
+        put "129,150,151,163" into theCodesA["u"]
+        put "139,140,141,161" into theCodesA["i"]
+        put "144" into theCodesA["E"]
+        put "130,136,137,138" into theCodesA["e"]
+        put "153" into theCodesA["O"]
+        put "148,149,162" into theCodesA["o"]
+        put "165" into theCodesA["N"]
+        put "164" into theCodesA["n"]
+        put "159" into theCodesA["f"]
+    end if
+    
+    repeat for each key theKey in theCodesA
+        repeat for each item theCode in theCodesA[theKey]
+            replace numtochar(theCode) with theKey in pString
+        end REPEAT
+    end REPEAT
+    
+    return pString
+end ConvertHighToLowISO
+
+
+function HighISOToHTMLEntities pHTML
+    set the casesensitive to true
+    put the customProperties["uISOValueHTMLEntities"] of button "uHTMLEntityISOValues" of me into theISONumsA
+    
+    repeat for each key theISONum in theISONumsA
+        if theISONum > 127 then
+            replace "&#" & theISONum & ";" with theISONumsA[theISONum] in pHTML
+        end if
+    end REPEAT
+    
+    return pHTML
+end HighISOToHTMLEntities
+
+
+function HTMLEntitiesToISO pHTML
+    set the casesensitive to true
+    put the customProperties["uHTMLEntityISOValues"] of button "uHTMLEntityISOValues" of me into theEntitiesA
+    
+    repeat for each key theEntity in theEntitiesA
+        replace theEntity with theEntitiesA[theEntity] in pHTML
+    end REPEAT
+    
+    return pHTML
+end HTMLEntitiesToISO
+
+
+
+--> XML
+
+function EscapePredefinedXMLEntities pStr
+    replace "&" with "&amp;" in pStr
+    replace "<" with "&lt;" in pStr
+    replace ">" with "&gt;" in pStr
+    replace "'" with "&apos;" in pStr
+    replace quote with "&quot;" in pStr
+    
+    return pStr
+end EscapePredefinedXMLEntities
+
+
+--> ZIP
+
+command zipAddFolderToArchive pZipArchivePath, pRootFolderPath, pIncludeRootFolderInArchiveItemNames, @pFilesToExclude, @pExtensionsThatArentCompressed, pFolderPath
+    local theArchiveItemName,theCharNo,theError,theFile
+    local theFiles,theFolder,theFolders
+    
+    put pIncludeRootFolderInArchiveItemNames is true into pIncludeRootFolderInArchiveItemNames
+    set the wholematches to true
+    
+    replace comma with cr in pExtensionsThatArentCompressed
+    
+    if pFolderPath is empty then
+        put pRootFolderPath into pFolderPath	
+        if pIncludeRootFolderInArchiveItemNames then
+            set the itemdel to slash	# we want folder to be reflected in archive item name
+            delete item -1 of pRootFolderPath
+        end if
+    end if
+    
+    put fileFilesInFolder(pFolderPath, true) into theFiles
+    set the itemdel to "."
+    
+    repeat for each line theFile in theFiles
+        if theFile is among the lines of pFilesToExclude then next repeat
+         
+        put theFile into theArchiveItemName
+        put offset(pRootFolderPath, theArchiveItemName) into theCharNo
+        if theCharNo is 0 then return "file is not in expected folder"
+        
+        delete char 1 to (the number of chars of pRootFolderPath + 1) of theArchiveItemName	# strip root folder up to slash (zip item names shouldn't start with a slash)
+         
+        if item -1 of theArchiveItemName is among the lines of pExtensionsThatArentCompressed   then
+            revZipAddUncompressedItemWithFile pZipArchivePath, theArchiveItemName, theFile
+        else
+            revZipAddItemWithFile pZipArchivePath, theArchiveItemName, theFile
+        end if
+        if the result is not empty then
+            put the result into theError
+            exit REPEAT
+        end if
+    end REPEAT
+    
+    if theError is empty then 
+        put fileFoldersInFolder(pFolderPath, true) into theFolders
+        repeat for each line theFolder in theFolders
+            zipAddFolderToArchive pZipArchivePath, pRootFolderPath, pIncludeRootFolderInArchiveItemNames, pFilesToExclude, pExtensionsThatArentCompressed, theFolder
+            put the result into theError
+            if theError is not empty then
+                exit REPEAT
+            end if
+        end REPEAT
+    end if
+    
+    return theError
+end zipAddFolderToArchive
+
+
+command zipDecompressArchiveToFolder pZipArchivePath, pOutputFolder, pItemsToExclude, pCallbackHandler
+    local theError
+    
+    if the last char of pOutputFolder is slash then delete the last char of pOutputFolder
+    
+    set the wholematches to true
+    put the filetype into theFileType
+    set the filetype to empty
+    
+    put revZipEnumerateItems(pZipArchivePath) into theArchiveItems
+    put the number of lines of theArchiveItems into theItemCount
+    
+    repeat for each line theArchiveItem in theArchiveItems
+        add 1 to i
+         
+        if theArchiveItem is among the lines of pItemsToExclude then next repeat
+         
+        put pOutputFolder & slash & theArchiveItem into theFilePath
+        put fileExtractDirectory(theFilePath) into theDirectoryPath
+        
+        if theDirectoryPath is not pOutputFolder then
+            fileCreateAllFoldersInPath theDirectoryPath, pOutputFolder
+            put the result into theError
+        end if
+        
+        if theError is empty then
+            if pCallbackHandler is not empty then
+                put "send" && quote & pCallbackHandler && "i, theItemCount" & quote && "to the current card of the topstack" into theDo
+                do theDo
+            end if
+            
+            revZipExtractItemToFile pZipArchivePath, theArchiveItem, theFilePath
+            put the result into theError
+        end if
+        
+        if theError is not empty then exit REPEAT
+    end REPEAT
+    
+    set the filetype to theFileType
+    
+    return theError
+end zipDecompressArchiveToFolder
+
+
+--> Set IT
+
+command SetValueOfItInCaller pValue
+    global gTempStorageForItVar
+    
+    ## Store value in global
+    put pValue into gTempStorageForItVar
+    
+    ## Store current debugcontext (debugger uses this)
+    put the debugcontext into theContext
+    
+    ## the executionContexts is the list of handlers in the chain.
+    ## This handler would be line -1.
+    ## The handler that called this handler is -2.
+    ## The handler that you want to set "it" in is -3
+    set the debugcontext to line -3 of the executioncontexts
+    
+    ## Make the global gTempStorageForItVar available within context of handler we 
+    ## want to set "it" in. Then set it to the global var
+    debugdo "global gTempStorageForItVar;put gTempStorageForItVar into it"
+    
+    ## restore debugcontext
+    set the debugcontext to theContext
+    
+    ## cleanup
+    delete global gTempStorageForItVar
+end SetValueOfItInCaller
+
+--> URLs
+
+
+function urlExtractProtocol pURL
+    _ParseURL pURL, theProtocol, theUsername, thePassword, theHost, thePort, thePath, theQueryString
+    return theProtocol
+end urlExtractProtocol
+
+
+function urlExtractHost pURL
+    _ParseURL pURL, theProtocol, theUsername, thePassword, theHost, thePort, thePath, theQueryString
+    return theHost
+end urlExtractHost
+
+
+function urlExtractPort pURL
+    _ParseURL pURL, theProtocol, theUsername, thePassword, theHost, thePort, thePath, theQueryString
+    return thePort
+end urlExtractPort
+
+
+function urlExtractPath pURL
+    _ParseURL pURL, theProtocol, theUsername, thePassword, theHost, thePort, thePath, theQueryString
+    return thePath
+end urlExtractPath
+
+
+function urlExtractQueryString pURL
+    _ParseURL pURL, theProtocol, theUsername, thePassword, theHost, thePort, thePath, theQueryString
+    return theQueryString
+end urlExtractQueryString
+
+
+function urlExtractUsername pURL
+    _ParseURL pURL, theProtocol, theUsername, thePassword, theHost, thePort, thePath, theQueryString
+    return theUsername
+end urlExtractUsername
+
+
+function urlExtractPassword pURL
+    _ParseURL pURL, theProtocol, theUsername, thePassword, theHost, thePort, thePath, theQueryString
+    return thePassword
+end urlExtractPassword
+
+
+## Returns array containing all parts of the url
+function urlParse pURL
+    _ParseURL pURL, theProtocol, theUsername, thePassword, theHost, thePort, thePath, theQueryString
+    put pURL into theURLA["url"]
+    put theProtocol into theURLA["protocol"]
+    put theUsername into theURLA["username"]
+    put thePassword into theURLA["password"]
+    put theHost into theURLA["host"]
+    put thePort into theURLA["port"]
+    put thePath into theURLA["path"]
+    put theQueryString into theURLA["query string"]
+    return theURLA
+end urlParse
+
+
+private command _ParseURL pURL, @pProtocol, @pUsername, @pPassword, @pHost, @pPort, @pPath, @pQueryString
+    local theResult,theWholeProtocol,theUsernamePassword
+    ## Notes:
+    ## Assumes that protocols are all letters, _ or -.
+    ## Couldn't find rules for acceptable characters
+    put matchtext(pURL, "(^([a-zA-Z_-]*)://)?((.+[:@])?(.+)@)?([^/:]*)?(:[0-9]*[^/])*(/[^?]*)*(\?.*)*", \
+            theWholeProtocol, pProtocol, theUsernamePassword, pUsername, pPassword, pHost, pPort, pPath, pQueryString) into theResult
+    -- put matchtext(pURL, "(^([a-zA-Z_-]*)://)?([^@]*?:+)*(.*?@+)*([^/:]*)?(:[0-9]*[^/])*(/[^?]*)*(\?.*)*", \
+            -- pOptional, pProtocol, pUsername, pPassword, pHost, pPort, pPath, pQueryString) into theResult
+    ## if no password is provided then the pPassword match is actually username
+    if pUsername is empty and pPassword is not empty then
+        put pPassword into pUsername
+        put empty into pPassword
+    end if
+    ## The regex could possibly be updated to not include these characters but for now we strip them
+    if the last char of pPassword is "@" then delete the last char of pPassword
+    if the last char of pUsername is ":" then delete the last char of pUsername
+    if the last char of pUsername is "@" then delete the last char of pUsername
+    if the first char of pPort is ":" then delete the first char of pPort
+    if the first char of pPath is slash then delete the first char of pPath
+    if the first char of pQueryString is "?" then delete the first char of pQueryString
+    -- breakpoint
+    return theResult
+end _ParseURL
+
+
+--> HTML
+
+
+-- strips all html tags
+function HTMLToText pHTML
+    set the htmltext of field 1 of me to pHTML
+    put the text of field 1 of me into pHTML
+    set the text of field 1 of me to empty
+    return pHTML
+end HTMLToText
+
+
+function TextToHTML pText
+    ## tried using templatefield but it failed on some text
+    set the text of field 1 of me to pText
+    put the htmltext of field 1 of me into pText
+    set the text of field 1 of me to empty
+    return pText
+end TextToHTML
+
+
+function TextToUTF8 pText
+    return unidecode(uniencode(pText), "UTF8")
+end TextToUTF8
+
+
+-- removes color, size, and styles
+function StripHTMLFormatting pRevHTML
+    set the htmltext of field 1 of me to pRevHTML
+    set the textsize of char 1 to -1 of field 1 of me to empty
+    set the textstyle of char 1 to -1 of field 1 of me to "plain"
+    set the textcolor of char 1 to -1 of field 1 of me to empty
+    put the htmltext of field 1 of me into pRevHTML
+    set the text of field 1 of me to empty
+    return pRevHTML
+end StripHTMLFormatting
+
+
+-- Strips specified HTML tags
+function StripHTML pRevHTML, pStripFilter, pStripTrailingCR
+    local tProp,tFontFilter,tInlineFilter,tAttributeFilter,tStart,tEnd
+    local tSkip,tOffset1,tOffset2,tDeleteChars,i
+    
+    if pStripFilter is empty then
+        put "p,b,i,u,strike,sub,sup,box,threedbox,expanded,condensed,face,size,color,bgcolor,lang,img,a" into pStripFilter
+    end if
+     
+    set the wholematches to true
+     
+    --> PROCESS pStripFilter
+    repeat for each item tProp in pStripFilter
+        if tProp is among the items of "p,b,i,u,strike,sub,sup,box,threedbox,expanded,condensed" then
+            put tProp &comma after tAttributeFilter
+        else if tProp is among the items of "face,size,color,bgcolor,lang" then
+            put tProp &comma after tFontFilter
+        else if tProp is among the items of "img,a" then
+            put tProp & comma after tInlineFilter
+        end if
+    end REPEAT
+     
+    --> PROCESS
+    repeat forever --> OK, I TRIED USING MATCHCHUNK WITH THIS BUT IT WAS A GAZILLION TIMES SLOWER
+        put offset("<font", pRevHTML, tSkip) into tOffset1
+        if tOffset1 > 0 then
+            put offset(">", pRevHTML, tSkip + tOffset1) into tOffset2 --> GET CLOSING TAG
+             
+            --> LOOP THROUGH PROPS AND ERASE
+            repeat for each item tProp in tFontFilter
+                put offset(space & tProp & "=" & quote, pRevHTML, tSkip + tOffset1) into tStart
+                if tStart > 0 and tSkip + tOffset1 + tStart < tSkip + tOffset1 + tOffset2 then --> ONLY LOOK FOR PROPS IN CURRENT FONT TAG
+                    get tSkip + tOffset1 + tStart + length(tProp) + 2
+                    put offset(quote, pRevHTML, it) into tEnd
+                    if tEnd > 0 then
+                        put tSkip + tStart + tOffset1 & comma & it + tEnd & cr after tDeleteChars
+                    end if
+                end if
+            end REPEAT
+             
+            --> NOW MOVE BACKWARDS THROUGH LIST AND DELETE
+            repeat with i = the number of lines of tDeleteChars down to 1
+                delete char (item 1 of line i of tDeleteChars) to (item 2 of line i of tDeleteChars) of pRevHTML
+            end REPEAT
+            put empty into tDeleteChars
+        else
+            exit REPEAT
+        end if
+        add tOffset1 + 4 to tSkip
+    end REPEAT
+     
+    repeat for each item tProp in tAttributeFilter
+        replace "<"&tProp&">" with empty in pRevHTML
+        replace "</"&tProp&">" with empty in pRevHTML
+    end REPEAT
+     
+    repeat for each item tProp in tInlineFilter
+        repeat forever
+            put offset("<"&tProp, pRevHTML) into tStart
+            if tStart > 0 then
+                put offset(">", pRevHTML, tStart) into tEnd
+                if tEnd > 0 then
+                    delete char tStart to (tStart+tEnd) of pRevHTML
+                else
+                    exit REPEAT
+                end if
+            else
+                exit REPEAT
+            end if
+        end REPEAT
+    end REPEAT
+     
+    if "a" is among the items of tInlineFilter then
+        replace "</a>" with empty in pRevHTML
+    end if
+     
+    --> REMOVE ANY LONELY <FONT> TAGS
+    repeat forever
+        put offset("<font>", pRevHTML) into tStart
+        if tStart > 0 then
+            put offset("</font>", pRevHTML, tStart) into tEnd
+            if tEnd > 0 then
+                delete char tStart+tEnd to tStart+tEnd+6 of pRevHTML
+                delete char tStart to tStart+5 of pRevHTML
+            else
+                exit REPEAT
+            end if
+        else
+            exit REPEAT
+        end if
+    end REPEAT
+     
+    --> REMOVE TRAILING RETURNS
+    if pStripTrailingCR then
+        repeat forever
+            if char -8 to -1 of pRevHTML is cr&"<p></p>" then
+                delete char -8 to -1 of pRevHTML
+            else
+                exit REPEAT
+            end if
+        end REPEAT
+    end if
+     
+    return pRevHTML
+end StripHTML
+
+
+function UTF8Text pField
+    return unidecode(the unicodetext of pField, "UTF8")
+end UTF8Text
+
+
+function UTF8ToUTF16 pUTF8String
+    return uniencode(pUTF8String, "UTF8")
+end UTF8ToUTF16
+
+
+function UTF16toUTF8 pUTF16String
+    return unidecode(pUTF16String, "UTF8")
+end UTF16toUTF8
+
+
+## platform specific text encoding
+function UTF8ToText pUTF8String
+    return unidecode(uniencode(pUTF8String, "UTF8"))
+end UTF8ToText
+
+
+function UTF8ToISOText pUTF8String
+    put UTF8ToText(pUTF8String) into pUTF8String
+    if the platform is "MacOS" then
+        put mactoiso(pUTF8String) into pUTF8String
+    end if
+    return pUTF8String
+end UTF8ToISOText
+
+
+function UTF8ToHTMLText pUTF8Text
+    set the unicodetext of field 1 of me to uniencode(pUTF8Text, "UTF8")
+    put the htmltext of field 1 of me into theHTML
+    set the text of field 1 of me to empty
+    put empty into char 1 to 3 of theHTML
+    put empty into char -4 to -1 of theHTML
+    return theHTML
+end UTF8ToHTMLText
+
+function HTMLToUTF8 pRevHTML
+    set the htmltext of field 1 of me to pRevHTML
+    put unidecode(the unicodetext of field 1 of me, "UTF8") into pRevHTML
+    set the text of field 1 of me to empty
+    return pRevHTML
+end HTMLToUTF8
+
+
+function HTMLDecimalEntitiesToUTF8 pRevHTML
+    local theCharOffset,theEndCharOffset,theOrigSetting,theStartChar
+    local theUnicodeChar
+    
+    put the useunicode into theOrigSetting
+    
+    put 0 into theStartChar
+    
+    repeat forever
+        put offset("&#", pRevHTML, theStartChar) into theCharOffset
+        if theCharOffset > 0 then
+            put theStartChar + theCharOffset into theCharOffset
+            -- add theCharOffset to theStartChar
+             
+            put offset(";", pRevHTML, theCharOffset) into theEndCharOffset
+            if theEndCharOffset > 0 then
+                put char (theCharOffset + 2) to (theCharOffset + theEndCharOffset - 1) of pRevHTML into theUnicodeChar
+                if theUnicodeChar is an integer and theUnicodeChar > 255 then
+                    set the useunicode to true
+                    put numtochar(theUnicodeChar) into theUnicodeChar
+                    put unidecode(theUnicodeChar, "UTF8") into theUnicodeChar
+                    replace char theCharOffset to (theCharOffset + theEndCharOffset) of pRevHTML with theUnicodeChar in pRevHTML
+                    set the useunicode to false
+                else
+                    put theEndCharOffset + theCharOffset into theStartChar
+                end if
+            else
+                # not end match found, bypass this "&#" on the next run through
+                # can this happen?  Not sure, but I don't want to find out
+                put theEndCharOffset + theCharOffset into theStartChar
+            end if
+        else
+            exit REPEAT
+        end if
+    end REPEAT
+     
+    set the useunicode to theOrigSetting
+     
+    return pRevHTML
+end HTMLDecimalEntitiesToUTF8
